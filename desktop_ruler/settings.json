@@ -1,8 +1,8 @@
 {
   "window": {
-    "x": 1360,
-    "y": 315,
-    "width": 936,
+    "x": 1716,
+    "y": 955,
+    "width": 786,
     "height": 85
   },
   "appearance": {
@@ -14,11 +14,11 @@
   "logo": {
     "enabled": true,
     "path": "assets/logo.png",
-    "x": 3,
-    "y": 17,
+    "x": 0,
+    "y": 15,
     "size": 61,
     "opacity": 0.95,
-    "lock_for_users": true
+    "lock_for_users": false
   },
   "reading_guide": {
     "enabled": false,
@@ -26,7 +26,7 @@
     "dim_opacity": 0.35
   },
   "behavior": {
-    "always_on_top": false,
+    "always_on_top": true,
     "click_through": false,
     "move_step": 28
   },
