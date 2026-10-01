@@ -1,13 +1,13 @@
 {
   "window": {
-    "x": 200,
-    "y": 200,
-    "width": 600,
+    "x": 850,
+    "y": 877,
+    "width": 630,
     "height": 85
   },
   "appearance": {
     "color": "#FBBF24",
-    "opacity": 0.85,
+    "opacity": 1.0,
     "text_color": "#1F2937",
     "tick_color": "#374151"
   },
@@ -17,17 +17,17 @@
     "dim_opacity": 0.35
   },
   "behavior": {
-    "always_on_top": true,
+    "always_on_top": false,
     "click_through": false,
     "move_step": 28
   },
   "hotkeys": {
-    "move_down": "Ctrl + Alt + Down",
-    "move_up": "Ctrl + Alt + Up",
-    "toggle_visibility": "Win + Shift + R",
-    "toggle_always_on_top": "Win + Shift + T",
+    "toggle_visibility": "Win + Ctrl + Alt + H",
+    "toggle_always_on_top": "Win + Ctrl + Alt + T",
     "increase_length": "Win + Shift + Plus",
     "decrease_length": "Win + Shift + Minus",
+    "move_up": "Ctrl + Alt + Up",
+    "move_down": "Ctrl + Alt + Down",
     "move_left": "Ctrl + Alt + Left",
     "move_right": "Ctrl + Alt + Right",
     "increase_thickness": "Win + Alt + Up",
