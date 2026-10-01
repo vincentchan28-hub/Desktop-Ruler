@@ -1,8 +1,8 @@
 {
   "window": {
-    "x": 1360,
-    "y": 315,
-    "width": 936,
+    "x": 1027,
+    "y": 681,
+    "width": 630,
     "height": 85
   },
   "appearance": {
@@ -10,14 +10,6 @@
     "opacity": 1.0,
     "text_color": "#1F2937",
     "tick_color": "#374151"
-  },
-  "logo": {
-    "enabled": true,
-    "path": "assets/logo.png",
-    "x": 3,
-    "y": 17,
-    "size": 61,
-    "opacity": 0.95
   },
   "reading_guide": {
     "enabled": false,
@@ -27,7 +19,7 @@
   "behavior": {
     "always_on_top": false,
     "click_through": false,
-    "move_step": 28
+    "move_step": 23
   },
   "hotkeys": {
     "toggle_visibility": "Win + Ctrl + Alt + H",
