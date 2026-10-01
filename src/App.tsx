@@ -43,186 +43,133 @@ const CODE_FILES: Record<string, { path: string; language: string; content: stri
   'settings_dialog.py': {
     path: 'desktop_ruler/settings_dialog.py',
     language: 'python',
-    description: 'Scrollable Settings Dialog with Logo & Branding controls (Upload, X/Y Offset, Size), Packing List Move Step, and Shortcuts.',
+    description: 'Tabbed settings dialog with smooth QSliders (Move Step, Height, X/Y Offset, Size) and locked brand logo release mode.',
     content: `"""Settings Dialog for Desktop Ruler.
 
 Provides a responsive, scrollable tabbed settings window with:
-- General Tab: Window behaviors, configurable line move step (for packing lists), reading guide, reset dimensions.
-- Appearance Tab: Preset colors, transparency, and Logo & Branding controls (upload file, position X/Y, size).
-- Shortcuts Tab: Comprehensive global shortcut list, interactive key recording, and preset switching.
+- General Tab: Horizontal QSliders for packing list move step (5-120px) and reading slot height.
+- Appearance Tab: Horizontal QSliders for logo X offset, Y offset, and size; embedded brand logo preview; release lock.
+- Shortcuts Tab: Global Win32 hotkey recording.
 """
-
 import os
 import shutil
 from typing import Optional, Dict
-from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtGui import QColor, QKeySequence, QPixmap
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
-    QDialog,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QTabWidget,
-    QLabel,
-    QPushButton,
-    QCheckBox,
-    QSlider,
-    QSpinBox,
-    QScrollArea,
-    QFrame,
-    QColorDialog,
-    QFileDialog,
-    QMessageBox,
+    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
+    QLabel, QPushButton, QCheckBox, QSlider, QScrollArea,
+    QFrame, QColorDialog, QFileDialog, QMessageBox,
 )
 from desktop_ruler.settings import SettingsManager, DEFAULT_SETTINGS
 
+# In _build_general_tab:
+# self.slider_move_step = QSlider(Qt.Orientation.Horizontal)  # Range: 5-120 px
+# self.slider_line_height = QSlider(Qt.Orientation.Horizontal) # Range: 16-120 px
 
-class SettingsDialog(QDialog):
-    """Tabbed settings window for configuring ruler appearance, branding, and shortcuts."""
+# In _build_appearance_tab:
+# self.slider_logo_x = QSlider(Qt.Orientation.Horizontal)     # Range: 0-150 px
+# self.slider_logo_y = QSlider(Qt.Orientation.Horizontal)     # Range: 0-120 px
+# self.slider_logo_size = QSlider(Qt.Orientation.Horizontal)  # Range: 16-80 px
+# self.btn_lock_logo = QPushButton("🔒 Lock for Users")       # Hides upload for end-users`
+  },
+  'embed_logo.py': {
+    path: 'desktop_ruler/embed_logo.py',
+    language: 'python',
+    description: 'Utility that reads any image (PNG, JPG) and bakes it directly into embedded_logo.py bytecode and assets/logo.png.',
+    content: `"""Logo Embedding Utility for Desktop Ruler.
 
-    appearance_changed = Signal(str, float)
-    reading_guide_changed = Signal(bool, int)
-    always_on_top_changed = Signal(bool)
-    move_step_changed = Signal(int)
-    logo_changed = Signal()
-    reset_geometry_requested = Signal()
+Usage:
+    python desktop_ruler/embed_logo.py [path_to_image]
 
-    def __init__(self, settings_manager: SettingsManager, parent=None):
-        super().__init__(parent)
-        self.settings = settings_manager
-        self.setWindowTitle("Desktop Ruler — Settings")
-        self.setFixedSize(540, 480)
-        self._build_ui()
+Embeds your image into desktop_ruler/embedded_logo.py as Base64 bytecode.
+When compiled into an executable, the logo is permanently inside the binary!
+"""
+import os, sys, shutil, base64
 
-    def _build_appearance_tab(self):
-        # Section A: Embedded Logo & Branding Controls
-        # Checkbox: Display Embedded Logo on Left of Ruler
-        # File Picker: Upload / Choose Logo File (.png, .jpg, .svg)
-        # SpinBoxes: Left Offset (X) and Top Offset (Y)
-        # Slider: Logo Size (16px to 64px)
-        pass
+def embed_logo_file(source_image_path: str = None) -> bool:
+    # Reads source image, bakes base64 into desktop_ruler/embedded_logo.py
+    # and copies to desktop_ruler/assets/logo.png
+    pass`
+  },
+  'embedded_logo.py': {
+    path: 'desktop_ruler/embedded_logo.py',
+    language: 'python',
+    description: 'Embedded base64 asset. Guarantees logo is compiled directly into the binary executable and never deleted.',
+    content: `"""Embedded Logo Asset for Desktop Ruler."""
+import base64
 
-    def _upload_logo_file(self):
-        """Open a file dialog to pick an image, copy it to assets/logo.png, and embed it."""
-        chosen_file, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Logo Image to Embed",
-            "",
-            "Image Files (*.png *.jpg *.jpeg *.svg *.ico *.bmp)"
-        )
-        if not chosen_file:
-            return
+EMBEDDED_LOGO_BASE64 = "..."  # Base64-encoded binary data of your brand logo
 
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        assets_dir = os.path.join(base_dir, "assets")
-        os.makedirs(assets_dir, exist_ok=True)
-
-        target_file = os.path.join(assets_dir, "logo.png")
-        shutil.copyfile(chosen_file, target_file)
-        self.settings.set("logo", "path", "assets/logo.png")
-        self.settings.set("logo", "enabled", True)
-        self.logo_changed.emit()`
+def get_embedded_logo():
+    """Load and return the embedded brand logo as a QPixmap."""
+    try:
+        from PySide6.QtGui import QPixmap
+        pixmap = QPixmap()
+        raw_data = base64.b64decode(EMBEDDED_LOGO_BASE64)
+        pixmap.loadFromData(raw_data)
+        return pixmap
+    except Exception:
+        return None`
   },
   'ruler_window.py': {
     path: 'desktop_ruler/ruler_window.py',
     language: 'python',
-    description: 'Frameless floating ruler. Draws embedded brand logo on left, shifts entire ruler up/down by move_step for packing lists.',
+    description: 'Frameless floating ruler. Loads embedded logo from bytecode, paints cached pixmap, and shifts ruler for packing lists.',
     content: `"""Ruler Window implementation using PySide6 (Qt)."""
 import os
-from PySide6.QtCore import Qt, QPoint, QRect, QSize, QTimer
+from PySide6.QtCore import Qt, QPoint, QRect, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPixmap
-from PySide6.QtWidgets import QWidget, QMenu
+from PySide6.QtWidgets import QWidget
 from desktop_ruler.settings import SettingsManager
-from desktop_ruler.settings_dialog import SettingsDialog
 
 class DesktopRuler(QWidget):
     def _load_logo(self) -> None:
-        """Load logo image from assets/logo.png into QPixmap."""
-        logo_cfg = self.settings.data.get("logo", {})
-        self.logo_enabled = logo_cfg.get("enabled", True)
-        self.logo_x = int(logo_cfg.get("x", 10))
-        self.logo_y = int(logo_cfg.get("y", 28))
-        self.logo_size = int(logo_cfg.get("size", 34))
+        """Load logo from embedded bytecode first, fallback to disk."""
+        try:
+            from desktop_ruler.embedded_logo import get_embedded_logo
+            pixmap = get_embedded_logo()
+        except Exception:
+            pixmap = None
 
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        logo_path = logo_cfg.get("path", "assets/logo.png")
-        full_path = os.path.join(base_dir, logo_path) if not os.path.isabs(logo_path) else logo_path
-
-        if os.path.exists(full_path):
-            self.logo_pixmap = QPixmap(full_path)
-        else:
-            self.logo_pixmap = None
+        if pixmap is None or pixmap.isNull():
+            # Check local file fallback
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            candidates = [os.path.join(base_dir, "x03.png"), os.path.join(base_dir, "assets", "logo.png")]
+            for p in candidates:
+                if os.path.exists(p):
+                    pixmap = QPixmap(p)
+                    break
+        self.logo_pixmap = pixmap
+        self._update_cached_logo()
 
     def move_relative(self, dx: int, dy: int):
         """Moves entire ruler window relative to its current screen position."""
-        new_x = self.x() + dx
-        new_y = self.y() + dy
-        self.setGeometry(new_x, new_y, self.width(), self.height())
+        self.setGeometry(self.x() + dx, self.y() + dy, self.width(), self.height())
         self._save_geometry()
         if dy > 0:
             self.show_toast(f"▼ Moved Down {dy}px (Packing Line)")
         elif dy < 0:
-            self.show_toast(f"▲ Moved Up {abs(dy)}px (Packing Line)")
-
-    def paintEvent(self, event):
-        # 1. Background body
-        # 2. Reading Guide
-        # 3. Draw Embedded Logo on Left of Ruler
-        if self.logo_enabled and self.logo_pixmap and not self.logo_pixmap.isNull():
-            scaled_logo = self.logo_pixmap.scaled(
-                self.logo_size,
-                self.logo_size,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            painter.drawPixmap(self.logo_x, self.logo_y, scaled_logo)
-        # 4. Ticks and measurements`
+            self.show_toast(f"▲ Moved Up {abs(dy)}px (Packing Line)")`
   },
   'settings.py': {
     path: 'desktop_ruler/settings.py',
     language: 'python',
-    description: 'JSON settings manager with persistent logo position, move_step, and hotkey configurations.',
+    description: 'JSON settings manager with persistent logo position, lock_for_users, move_step, and hotkey configurations.',
     content: `DEFAULT_SETTINGS = {
     "window": {"x": 200, "y": 200, "width": 600, "height": 85},
     "appearance": {"color": "#FBBF24", "opacity": 0.85},
     "logo": {
         "enabled": True,
         "path": "assets/logo.png",
-        "x": 10,
-        "y": 28,
-        "size": 34,
-        "opacity": 0.95
+        "x": 3,
+        "y": 17,
+        "size": 61,
+        "opacity": 0.95,
+        "lock_for_users": True  # Hides logo upload from end-users
     },
-    "behavior": {"always_on_top": True, "click_through": False, "move_step": 28},
-    "hotkeys": {
-        "move_down": "<win>+<shift>+<down>",
-        "move_up": "<win>+<shift>+<up>"
-    }
+    "behavior": {"always_on_top": True, "click_through": False, "move_step": 28}
 }`
-  },
-  'generate_logo.py': {
-    path: 'desktop_ruler/assets/generate_logo.py',
-    language: 'python',
-    description: 'Script that generates a crisp default brand emblem in assets/logo.png with PySide6.',
-    content: `"""Generate a crisp, transparent default logo PNG for Desktop Ruler."""
-import os
-import sys
-from PySide6.QtGui import QImage, QPainter, QColor, QPen, QBrush
-from PySide6.QtCore import Qt, QPointF, QRectF
-from PySide6.QtWidgets import QApplication
-
-app = QApplication.instance() or QApplication(sys.argv)
-size = 128
-image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
-image.fill(Qt.GlobalColor.transparent)
-# Draws shield badge, ruler icon, and saves to desktop_ruler/assets/logo.png`
-  },
-  'hotkeys.py': {
-    path: 'desktop_ruler/hotkeys.py',
-    language: 'python',
-    description: 'Win32 RegisterHotKey manager with conflict fallback and Ctrl+Alt / Win+Shift presets.',
-    content: `"""Windows Native Global Hotkeys Manager using ctypes (RegisterHotKey)."""
-# Supports hotkey registration, conflict detection, and dynamic rebinding.`
   },
   'main.py': {
     path: 'desktop_ruler/main.py',
@@ -290,9 +237,10 @@ export default function App() {
   // Logo & Branding State
   const [logoEnabled, setLogoEnabled] = useState<boolean>(true);
   const [logoSrc, setLogoSrc] = useState<string | null>(null);
-  const [logoX, setLogoX] = useState<number>(10);
-  const [logoY, setLogoY] = useState<number>(28);
-  const [logoSize, setLogoSize] = useState<number>(34);
+  const [logoX, setLogoX] = useState<number>(3);
+  const [logoY, setLogoY] = useState<number>(17);
+  const [logoSize, setLogoSize] = useState<number>(61);
+  const [logoLocked, setLogoLocked] = useState<boolean>(true);
 
   // Settings Modal State
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
@@ -876,7 +824,7 @@ export default function App() {
                               </label>
                             </div>
 
-                            {/* Logo Upload Row */}
+                            {/* Logo Upload & Lock Row */}
                             <div className="flex items-center gap-3 pt-1">
                               <div className="w-10 h-10 rounded border border-slate-700 bg-slate-900 flex items-center justify-center overflow-hidden shrink-0">
                                 {logoSrc ? (
@@ -885,21 +833,48 @@ export default function App() {
                                   <Sparkles className="w-5 h-5 text-amber-400" />
                                 )}
                               </div>
-                              <label className="flex-1 cursor-pointer">
-                                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow">
-                                  <Upload className="w-3.5 h-3.5" />
-                                  Upload / Choose Logo File (.png, .jpg, .svg)...
+                              <div className="flex-1 min-w-0">
+                                <span className="text-[11px] font-bold text-white block truncate">
+                                  {logoLocked ? '🔒 Brand Logo (Compiled into App)' : 'Logo Branding Mode'}
                                 </span>
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  onChange={handleLogoUpload}
-                                  className="hidden"
-                                />
-                              </label>
+                                <span className="text-[10px] text-slate-400 block truncate">
+                                  {logoLocked ? 'Locked for users (no upload shown)' : 'Upload or replace embedded logo'}
+                                </span>
+                              </div>
+                              {logoLocked ? (
+                                <button
+                                  onClick={() => setLogoLocked(false)}
+                                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] border border-slate-700 font-medium"
+                                  title="Switch to developer mode to change or upload a new logo"
+                                >
+                                  ⚙ Change (Dev)
+                                </button>
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  <label className="cursor-pointer">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] shadow">
+                                      <Upload className="w-3 h-3" />
+                                      Upload...
+                                    </span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={handleLogoUpload}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                  <button
+                                    onClick={() => setLogoLocked(true)}
+                                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] border border-slate-700 font-medium"
+                                    title="Lock logo so end-users cannot change it"
+                                  >
+                                    🔒 Lock
+                                  </button>
+                                </div>
+                              )}
                             </div>
 
-                            {/* Position Controls: X and Y */}
+                            {/* Position Controls: Horizontal Sliders for X and Y */}
                             <div className="grid grid-cols-2 gap-3 pt-1">
                               <div>
                                 <div className="flex justify-between text-[11px] text-slate-300 mb-1">
@@ -909,7 +884,7 @@ export default function App() {
                                 <input
                                   type="range"
                                   min="0"
-                                  max="120"
+                                  max="150"
                                   value={logoX}
                                   onChange={(e) => setLogoX(parseInt(e.target.value, 10))}
                                   className="w-full accent-amber-500 cursor-pointer"
@@ -923,7 +898,7 @@ export default function App() {
                                 <input
                                   type="range"
                                   min="0"
-                                  max="80"
+                                  max="120"
                                   value={logoY}
                                   onChange={(e) => setLogoY(parseInt(e.target.value, 10))}
                                   className="w-full accent-amber-500 cursor-pointer"
@@ -931,7 +906,7 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* Size Control */}
+                            {/* Size Control Slider */}
                             <div>
                               <div className="flex justify-between text-[11px] text-slate-300 mb-1">
                                 <span>Logo Size:</span>
@@ -940,7 +915,7 @@ export default function App() {
                               <input
                                 type="range"
                                 min="16"
-                                max="64"
+                                max="80"
                                 value={logoSize}
                                 onChange={(e) => setLogoSize(parseInt(e.target.value, 10))}
                                 className="w-full accent-amber-500 cursor-pointer"
@@ -948,7 +923,7 @@ export default function App() {
                             </div>
 
                             <p className="text-[10px] text-slate-400 leading-relaxed border-t border-slate-800 pt-2">
-                              💡 <strong>Permanent Bundling:</strong> In Python, selecting a logo automatically copies it into <code>desktop_ruler/assets/logo.png</code> so anyone installing the app gets the logo. Once you have finalized your logo and positioning, you can easily delete or comment out the upload button in <code>settings_dialog.py</code>.
+                              💡 <strong>Permanent Bytecode Embedding:</strong> Your logo is baked directly into <code>desktop_ruler/embedded_logo.py</code> as base64 bytecode. When compiled with PyInstaller, the image is part of the application executable so it can never be lost or deleted. In <code>settings.json</code>, <code>"lock_for_users": true</code> completely hides the upload button from regular users.
                             </p>
                           </div>
 
@@ -1157,41 +1132,41 @@ export default function App() {
               </div>
             </div>
 
-            {/* Step 2: Upload Logo */}
+            {/* Step 2: Sliders & Adjustments */}
             <div className="p-5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
               <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
                 <span className="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center text-xs">2</span>
-                <span>Upload and Position Your Logo</span>
+                <span>Smooth Sliders (No Number Toggles) in VS Code</span>
               </div>
-              <ol className="list-decimal list-inside text-xs text-slate-300 space-y-2 leading-relaxed">
-                <li>Right-click on the floating ruler and click <strong>⚙ Settings...</strong>.</li>
-                <li>Switch to the <strong>Appearance</strong> tab.</li>
-                <li>Under <strong>Logo & Branding</strong>, click <strong>📁 Upload / Choose Logo File (.png, .jpg, .svg)...</strong>.</li>
-                <li>Select any logo file from your computer. It is automatically saved directly to <code>desktop_ruler/assets/logo.png</code>.</li>
-                <li>Adjust <strong>Left Offset (X)</strong>, <strong>Top Offset (Y)</strong>, and <strong>Logo Size</strong> until the logo is exactly where you want it. The ruler updates live!</li>
-              </ol>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                All settings are now responsive horizontal <code>QSlider</code> controls with live numeric badges:
+              </p>
+              <ul className="list-disc list-inside text-xs text-slate-300 space-y-1.5 leading-relaxed pl-1">
+                <li><strong>Vertical Move Step:</strong> Drag the slider (5px to 120px) in the General tab to choose your line jump distance for packing lists.</li>
+                <li><strong>Reading Slot Height:</strong> Drag the slider (16px to 120px) to set the window slot height.</li>
+                <li><strong>Left Offset (X) & Top Offset (Y):</strong> Drag sliders in Appearance to place the logo on the left of the ruler.</li>
+                <li><strong>Logo Size:</strong> Drag slider (16px to 80px) to scale the logo cleanly.</li>
+              </ul>
             </div>
 
-            {/* Step 3: Bundle and Delete Upload Feature */}
+            {/* Step 3: Permanent Bytecode Embedding & Compiling */}
             <div className="p-5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
               <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
                 <span className="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center text-xs">3</span>
-                <span>How to Delete the Upload Feature (When Ready for Release)</span>
+                <span>Permanent Logo Embedding & Compiling (No Code Deletion Needed!)</span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Because your uploaded image was copied to <code>desktop_ruler/assets/logo.png</code>, it is now a permanent part of your project! When you upload to GitHub or build an installer, the logo is automatically included.
+                Your logo <code>x03.png</code> has been compiled into base64 bytecode in <code>desktop_ruler/embedded_logo.py</code>. It is part of the application code itself, so it is <strong>impossible</strong> to lose or delete when compiled!
               </p>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                To hide the upload button from regular users:
-              </p>
-              <div className="p-3 rounded-lg bg-slate-950 font-mono text-xs text-slate-300 border border-slate-800 space-y-2">
-                <div className="text-slate-500"># In desktop_ruler/settings_dialog.py around line 447, comment out or delete:</div>
-                <div className="text-rose-400"># self.btn_upload_logo = QPushButton(...)</div>
-                <div className="text-rose-400"># row_upload.addWidget(self.btn_upload_logo)</div>
+              <div className="p-3.5 rounded-lg bg-slate-950 font-mono text-xs text-slate-300 border border-slate-800 space-y-2">
+                <div className="text-amber-400 font-bold"># Lock Logo for Release (Disabled for End-Users):</div>
+                <div className="text-slate-400">By default, "lock_for_users": true is enabled. End users will never see the upload button.</div>
+                <div className="text-slate-400">You do NOT need to delete any Python code!</div>
+                <div className="pt-2 text-amber-400 font-bold"># To compile into a single .exe:</div>
+                <div className="text-emerald-400">pyinstaller --noconsole --onefile desktop_ruler/main.py</div>
+                <div className="pt-2 text-amber-400 font-bold"># To embed any new image into Python bytecode:</div>
+                <div className="text-emerald-400">python desktop_ruler/embed_logo.py [path_to_image]</div>
               </div>
-              <p className="text-xs text-slate-400">
-                The embedded logo will stay on the ruler forever using your customized X, Y, and Size!
-              </p>
             </div>
           </div>
         )}

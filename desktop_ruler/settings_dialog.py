@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QCheckBox,
     QSlider,
-    QSpinBox,
     QScrollArea,
     QFrame,
     QColorDialog,
@@ -204,17 +203,14 @@ class SettingsDialog(QDialog):
             QSlider::handle:horizontal {
                 background: #F8FAFC;
                 border: 1px solid #CBD5E1;
-                width: 14px;
-                margin-top: -4px;
-                margin-bottom: -4px;
-                border-radius: 7px;
+                width: 16px;
+                margin-top: -5px;
+                margin-bottom: -5px;
+                border-radius: 8px;
             }
-            QSpinBox {
-                background-color: #0F172A;
-                color: #F8FAFC;
-                border: 1px solid #475569;
-                border-radius: 4px;
-                padding: 4px 8px;
+            QSlider::handle:horizontal:hover {
+                background: #FFFFFF;
+                border-color: #F59E0B;
             }
             QScrollArea {
                 border: none;
@@ -309,14 +305,15 @@ class SettingsDialog(QDialog):
         layout.addWidget(desc_step)
 
         row_step = QHBoxLayout()
-        self.spin_move_step = QSpinBox()
-        self.spin_move_step.setRange(5, 200)
-        self.spin_move_step.setSuffix(" px per step")
+        self.slider_move_step = QSlider(Qt.Orientation.Horizontal)
+        self.slider_move_step.setRange(5, 120)
         current_step = int(self.settings.get("behavior", "move_step", 28))
-        self.spin_move_step.setValue(current_step)
-        self.spin_move_step.valueChanged.connect(self._on_move_step_changed)
-        row_step.addWidget(self.spin_move_step)
-        row_step.addStretch()
+        self.slider_move_step.setValue(current_step)
+        self.lbl_move_step_val = QLabel(f"{current_step} px / step")
+        self.lbl_move_step_val.setStyleSheet("font-family: Consolas, monospace; font-weight: bold; color: #F59E0B; min-width: 85px;")
+        self.slider_move_step.valueChanged.connect(self._on_move_step_slider)
+        row_step.addWidget(self.slider_move_step)
+        row_step.addWidget(self.lbl_move_step_val)
         layout.addLayout(row_step)
 
         # 2. Window Behavior
@@ -345,13 +342,15 @@ class SettingsDialog(QDialog):
 
         row_line = QHBoxLayout()
         row_line.addWidget(QLabel("Reading Slot Height:"))
-        self.spin_line_height = QSpinBox()
-        self.spin_line_height.setRange(16, 120)
-        self.spin_line_height.setSuffix(" px")
-        self.spin_line_height.setValue(guide_cfg.get("line_height", 28))
-        self.spin_line_height.valueChanged.connect(self._on_guide_toggled)
-        row_line.addWidget(self.spin_line_height)
-        row_line.addStretch()
+        self.slider_line_height = QSlider(Qt.Orientation.Horizontal)
+        self.slider_line_height.setRange(16, 120)
+        curr_lh = int(guide_cfg.get("line_height", 28))
+        self.slider_line_height.setValue(curr_lh)
+        self.lbl_line_height_val = QLabel(f"{curr_lh} px")
+        self.lbl_line_height_val.setStyleSheet("font-family: Consolas, monospace; font-weight: bold; color: #F59E0B; min-width: 55px;")
+        self.slider_line_height.valueChanged.connect(self._on_guide_slider)
+        row_line.addWidget(self.slider_line_height)
+        row_line.addWidget(self.lbl_line_height_val)
         layout.addLayout(row_line)
 
         # 4. Window Dimensions Reset
@@ -382,7 +381,8 @@ class SettingsDialog(QDialog):
         scroll.setWidget(content)
         self.tabs.addTab(scroll, "General")
 
-    def _on_move_step_changed(self, step: int):
+    def _on_move_step_slider(self, step: int):
+        self.lbl_move_step_val.setText(f"{step} px / step")
         self.settings.set("behavior", "move_step", step)
         self.move_step_changed.emit(step)
 
@@ -390,9 +390,13 @@ class SettingsDialog(QDialog):
         self.settings.set("behavior", "always_on_top", checked)
         self.always_on_top_changed.emit(checked)
 
+    def _on_guide_slider(self, val: int):
+        self.lbl_line_height_val.setText(f"{val} px")
+        self._on_guide_toggled()
+
     def _on_guide_toggled(self):
         enabled = self.cb_guide_enable.isChecked()
-        height = self.spin_line_height.value()
+        height = self.slider_line_height.value()
         self.settings.set("reading_guide", "enabled", enabled)
         self.settings.set("reading_guide", "line_height", height)
         self.reading_guide_changed.emit(enabled, height)
@@ -433,54 +437,101 @@ class SettingsDialog(QDialog):
         lf_layout.addWidget(self.cb_logo_enable)
 
         # Logo Upload & Thumbnail Row
-        # (NOTE: When you are finished selecting your permanent logo for release,
-        # you can remove or hide this upload button below)
+        is_locked = bool(self.settings.get("logo", "lock_for_users", True))
         row_upload = QHBoxLayout()
 
         self.lbl_logo_thumb = QLabel()
-        self.lbl_logo_thumb.setFixedSize(36, 36)
-        self.lbl_logo_thumb.setStyleSheet("background-color: #1E293B; border: 1px solid #475569; border-radius: 4px;")
+        self.lbl_logo_thumb.setFixedSize(40, 40)
+        self.lbl_logo_thumb.setStyleSheet("background-color: #1E293B; border: 1px solid #475569; border-radius: 6px; padding: 2px;")
         self.lbl_logo_thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._update_logo_thumbnail()
         row_upload.addWidget(self.lbl_logo_thumb)
 
+        info_col = QVBoxLayout()
+        info_col.setSpacing(2)
+        self.lbl_logo_status = QLabel("<b>Embedded Brand Logo</b>" if is_locked else "<b>Logo Branding Configuration</b>")
+        self.lbl_logo_status.setStyleSheet("color: #F8FAFC; font-size: 11px;")
+        info_col.addWidget(self.lbl_logo_status)
+
+        self.lbl_logo_subtext = QLabel("Compiled into application bytecode" if is_locked else "Choose an image to embed into executable code")
+        self.lbl_logo_subtext.setStyleSheet("color: #94A3B8; font-size: 10px;")
+        info_col.addWidget(self.lbl_logo_subtext)
+        row_upload.addLayout(info_col)
+
         row_upload.addStretch()
+
+        # Action buttons: Upload and Toggle Lock
+        self.btn_upload_logo = QPushButton("📁 Upload Logo File...")
+        self.btn_upload_logo.setStyleSheet("""
+            QPushButton {
+                background-color: #F59E0B;
+                color: #0F172A;
+                border-radius: 5px;
+                font-weight: bold;
+                padding: 6px 12px;
+                font-size: 11px;
+            }
+            QPushButton:hover { background-color: #FBBF24; }
+        """)
+        self.btn_upload_logo.clicked.connect(self._upload_logo_file)
+        self.btn_upload_logo.setVisible(not is_locked)
+        row_upload.addWidget(self.btn_upload_logo)
+
+        self.btn_lock_logo = QPushButton("🔒 Lock for Users" if not is_locked else "⚙ Change Logo (Dev)")
+        self.btn_lock_logo.setStyleSheet("""
+            QPushButton {
+                background-color: #334155;
+                color: #CBD5E1;
+                border: 1px solid #475569;
+                border-radius: 5px;
+                padding: 6px 10px;
+                font-size: 11px;
+            }
+            QPushButton:hover { background-color: #475569; }
+        """)
+        self.btn_lock_logo.clicked.connect(self._toggle_logo_lock)
+        row_upload.addWidget(self.btn_lock_logo)
+
         lf_layout.addLayout(row_upload)
 
-        # Position Controls: Horizontal X and Vertical Y
-        pos_row = QHBoxLayout()
+        # Position Controls: Horizontal X and Vertical Y Sliders
+        pos_x_row = QHBoxLayout()
+        pos_x_row.addWidget(QLabel("Left Offset (X):"))
+        self.slider_logo_x = QSlider(Qt.Orientation.Horizontal)
+        self.slider_logo_x.setRange(0, 150)
+        curr_x = int(logo_cfg.get("x", 10))
+        self.slider_logo_x.setValue(curr_x)
+        self.lbl_logo_x_val = QLabel(f"{curr_x} px")
+        self.lbl_logo_x_val.setStyleSheet("font-family: Consolas, monospace; font-weight: bold; color: #F59E0B; min-width: 48px;")
+        self.slider_logo_x.valueChanged.connect(self._on_logo_prop_changed)
+        pos_x_row.addWidget(self.slider_logo_x)
+        pos_x_row.addWidget(self.lbl_logo_x_val)
+        lf_layout.addLayout(pos_x_row)
 
-        pos_row.addWidget(QLabel("Left Offset (X):"))
-        self.spin_logo_x = QSpinBox()
-        self.spin_logo_x.setRange(0, 150)
-        self.spin_logo_x.setSuffix(" px")
-        self.spin_logo_x.setValue(int(logo_cfg.get("x", 10)))
-        self.spin_logo_x.valueChanged.connect(self._on_logo_prop_changed)
-        pos_row.addWidget(self.spin_logo_x)
+        pos_y_row = QHBoxLayout()
+        pos_y_row.addWidget(QLabel("Top Offset (Y):"))
+        self.slider_logo_y = QSlider(Qt.Orientation.Horizontal)
+        self.slider_logo_y.setRange(0, 120)
+        curr_y = int(logo_cfg.get("y", 28))
+        self.slider_logo_y.setValue(curr_y)
+        self.lbl_logo_y_val = QLabel(f"{curr_y} px")
+        self.lbl_logo_y_val.setStyleSheet("font-family: Consolas, monospace; font-weight: bold; color: #F59E0B; min-width: 48px;")
+        self.slider_logo_y.valueChanged.connect(self._on_logo_prop_changed)
+        pos_y_row.addWidget(self.slider_logo_y)
+        pos_y_row.addWidget(self.lbl_logo_y_val)
+        lf_layout.addLayout(pos_y_row)
 
-        pos_row.addSpacing(10)
-
-        pos_row.addWidget(QLabel("Top Offset (Y):"))
-        self.spin_logo_y = QSpinBox()
-        self.spin_logo_y.setRange(0, 150)
-        self.spin_logo_y.setSuffix(" px")
-        self.spin_logo_y.setValue(int(logo_cfg.get("y", 28)))
-        self.spin_logo_y.valueChanged.connect(self._on_logo_prop_changed)
-        pos_row.addWidget(self.spin_logo_y)
-
-        lf_layout.addLayout(pos_row)
-
-        # Size Control: Logo Height / Width
+        # Size Control: Logo Height / Width Slider
         size_row = QHBoxLayout()
         size_row.addWidget(QLabel("Logo Size:"))
         self.slider_logo_size = QSlider(Qt.Orientation.Horizontal)
-        self.slider_logo_size.setRange(16, 64)
-        self.slider_logo_size.setValue(int(logo_cfg.get("size", 34)))
+        self.slider_logo_size.setRange(16, 80)
+        curr_size = int(logo_cfg.get("size", 34))
+        self.slider_logo_size.setValue(curr_size)
+        self.lbl_logo_size_val = QLabel(f"{curr_size} px")
+        self.lbl_logo_size_val.setStyleSheet("font-family: Consolas, monospace; font-weight: bold; color: #F59E0B; min-width: 48px;")
         self.slider_logo_size.valueChanged.connect(self._on_logo_prop_changed)
         size_row.addWidget(self.slider_logo_size)
-
-        self.lbl_logo_size_val = QLabel(f"{logo_cfg.get('size', 34)}px")
-        self.lbl_logo_size_val.setStyleSheet("font-family: Consolas, monospace; font-size: 11px; min-width: 38px;")
         size_row.addWidget(self.lbl_logo_size_val)
         lf_layout.addLayout(size_row)
 
@@ -569,59 +620,97 @@ class SettingsDialog(QDialog):
         self.logo_changed.emit()
 
     def _on_logo_prop_changed(self):
-        x = self.spin_logo_x.value()
-        y = self.spin_logo_y.value()
+        x = self.slider_logo_x.value()
+        y = self.slider_logo_y.value()
         size = self.slider_logo_size.value()
-        self.lbl_logo_size_val.setText(f"{size}px")
+        self.lbl_logo_x_val.setText(f"{x} px")
+        self.lbl_logo_y_val.setText(f"{y} px")
+        self.lbl_logo_size_val.setText(f"{size} px")
 
         self.settings.set("logo", "x", x)
         self.settings.set("logo", "y", y)
         self.settings.set("logo", "size", size)
         self.logo_changed.emit()
 
-    def _update_logo_thumbnail(self):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        logo_rel = self.settings.get("logo", "path", "assets/logo.png")
-        full_path = os.path.join(base_dir, logo_rel) if not os.path.isabs(logo_rel) else logo_rel
+    def _toggle_logo_lock(self):
+        is_locked = bool(self.settings.get("logo", "lock_for_users", True))
+        new_lock = not is_locked
+        self.settings.set("logo", "lock_for_users", new_lock)
+        self.btn_upload_logo.setVisible(not new_lock)
+        self.btn_lock_logo.setText("🔒 Lock for Users" if not new_lock else "⚙ Change Logo (Dev)")
+        self.lbl_logo_status.setText("<b>Embedded Brand Logo</b>" if new_lock else "<b>Logo Branding Configuration</b>")
+        self.lbl_logo_subtext.setText("Compiled into application bytecode" if new_lock else "Choose an image to embed into executable code")
+        if new_lock:
+            QMessageBox.information(
+                self,
+                "Logo Locked for Release",
+                "Logo is now locked for users! When compiled, end users will not see any option to upload or change the logo."
+            )
 
-        if os.path.exists(full_path):
-            pm = QPixmap(full_path)
-            if not pm.isNull():
-                scaled = pm.scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    def _update_logo_thumbnail(self):
+        # 1. Check embedded bytecode
+        try:
+            from desktop_ruler.embedded_logo import get_embedded_logo
+            pm = get_embedded_logo()
+            if pm and not pm.isNull():
+                scaled = pm.scaled(36, 36, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                 self.lbl_logo_thumb.setPixmap(scaled)
                 return
+        except Exception:
+            pass
+
+        # 2. Check disk paths
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates = [
+            os.path.join(base_dir, "x03.png"),
+            os.path.join(base_dir, "assets", "logo.png"),
+        ]
+        logo_rel = self.settings.get("logo", "path", "")
+        if logo_rel:
+            full_path = os.path.join(base_dir, logo_rel) if not os.path.isabs(logo_rel) else logo_rel
+            candidates.insert(0, full_path)
+
+        for p in candidates:
+            if os.path.exists(p):
+                pm = QPixmap(p)
+                if not pm.isNull():
+                    scaled = pm.scaled(36, 36, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    self.lbl_logo_thumb.setPixmap(scaled)
+                    return
         self.lbl_logo_thumb.setText("No Logo")
 
     def _upload_logo_file(self):
-        """Open a file dialog to pick an image, copy it to assets/logo.png, and embed it."""
+        """Open a file dialog to pick an image, bake it into embedded_logo.py and assets/logo.png."""
         chosen_file, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Logo Image to Embed",
+            "Select Logo Image to Embed into Executable",
             "",
             "Image Files (*.png *.jpg *.jpeg *.svg *.ico *.bmp)"
         )
         if not chosen_file:
             return
 
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        assets_dir = os.path.join(base_dir, "assets")
-        os.makedirs(assets_dir, exist_ok=True)
-
-        target_file = os.path.join(assets_dir, "logo.png")
         try:
-            shutil.copyfile(chosen_file, target_file)
-            self.settings.set("logo", "path", "assets/logo.png")
-            self.settings.set("logo", "enabled", True)
-            self.cb_logo_enable.setChecked(True)
-            self._update_logo_thumbnail()
-            self.logo_changed.emit()
-            QMessageBox.information(
-                self,
-                "Logo Embedded",
-                f"Logo successfully copied and embedded into:\n{target_file}\n\nIt will be included when packaged or installed!"
-            )
+            from desktop_ruler.embed_logo import embed_logo_file
+            success = embed_logo_file(chosen_file)
+            if success:
+                self.settings.set("logo", "path", "assets/logo.png")
+                self.settings.set("logo", "enabled", True)
+                self.cb_logo_enable.setChecked(True)
+                self._update_logo_thumbnail()
+                self.logo_changed.emit()
+                QMessageBox.information(
+                    self,
+                    "Logo Embedded Permanently",
+                    "Logo successfully embedded into application Python code!\n\n"
+                    "File: desktop_ruler/embedded_logo.py\n\n"
+                    "When compiled, this logo will stay permanently inside the executable "
+                    "and will never be lost or deleted."
+                )
+            else:
+                QMessageBox.critical(self, "Upload Failed", "Could not embed logo image.")
         except Exception as e:
-            QMessageBox.critical(self, "Upload Failed", f"Could not copy logo file: {e}")
+            QMessageBox.critical(self, "Upload Failed", f"Could not embed logo file: {e}")
 
     def _apply_color(self, hex_val: str):
         self.settings.set("appearance", "color", hex_val)
@@ -720,17 +809,22 @@ class SettingsDialog(QDialog):
             self.settings.save()
             self.reset_defaults_requested.emit()
 
-            self.spin_move_step.setValue(28)
+            self.slider_move_step.setValue(28)
+            self.lbl_move_step_val.setText("28 px / step")
             self.cb_always_on_top.setChecked(True)
             self.cb_guide_enable.setChecked(False)
-            self.spin_line_height.setValue(28)
+            self.slider_line_height.setValue(28)
+            self.lbl_line_height_val.setText("28 px")
             self.slider_opacity.setValue(85)
             self._apply_color("#FBBF24")
 
             self.cb_logo_enable.setChecked(True)
-            self.spin_logo_x.setValue(10)
-            self.spin_logo_y.setValue(28)
+            self.slider_logo_x.setValue(10)
+            self.slider_logo_y.setValue(28)
             self.slider_logo_size.setValue(34)
+            self.lbl_logo_x_val.setText("10 px")
+            self.lbl_logo_y_val.setText("28 px")
+            self.lbl_logo_size_val.setText("34 px")
             self._update_logo_thumbnail()
             self.logo_changed.emit()
 

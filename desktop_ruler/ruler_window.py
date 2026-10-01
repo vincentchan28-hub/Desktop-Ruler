@@ -107,21 +107,44 @@ class DesktopRuler(QWidget):
             self._cached_scaled_logo = None
 
     def _load_logo(self) -> None:
-        """Load logo image from configured path into QPixmap and cache scaled version."""
+        """Load logo image from embedded bytecode or filesystem and cache scaled version."""
         logo_cfg = self.settings.data.get("logo", {})
         self.logo_enabled = logo_cfg.get("enabled", True)
         self.logo_x = int(logo_cfg.get("x", 10))
         self.logo_y = int(logo_cfg.get("y", 28))
         self.logo_size = int(logo_cfg.get("size", 34))
 
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        logo_path = logo_cfg.get("path", "assets/logo.png")
-        full_path = os.path.join(base_dir, logo_path) if not os.path.isabs(logo_path) else logo_path
+        pixmap: Optional[QPixmap] = None
 
-        if os.path.exists(full_path):
-            self.logo_pixmap = QPixmap(full_path)
-        else:
-            self.logo_pixmap = None
+        # 1. Primary: Load from embedded python bytecode (compiled into executable)
+        try:
+            from desktop_ruler.embedded_logo import get_embedded_logo
+            pixmap = get_embedded_logo()
+            if pixmap and pixmap.isNull():
+                pixmap = None
+        except Exception:
+            pixmap = None
+
+        # 2. Secondary fallback: check local disk paths
+        if pixmap is None or pixmap.isNull():
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            candidates = [
+                os.path.join(base_dir, "x03.png"),
+                os.path.join(base_dir, "assets", "logo.png"),
+            ]
+            logo_path = logo_cfg.get("path", "")
+            if logo_path:
+                full_path = os.path.join(base_dir, logo_path) if not os.path.isabs(logo_path) else logo_path
+                candidates.insert(0, full_path)
+
+            for p in candidates:
+                if os.path.exists(p):
+                    pm = QPixmap(p)
+                    if not pm.isNull():
+                        pixmap = pm
+                        break
+
+        self.logo_pixmap = pixmap
         self._update_cached_logo()
 
     def reload_logo(self) -> None:

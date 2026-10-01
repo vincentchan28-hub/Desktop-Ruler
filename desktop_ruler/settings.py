@@ -23,6 +23,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "y": 28,
         "size": 34,
         "opacity": 0.95,
+        "lock_for_users": True,
     },
     "reading_guide": {
         "enabled": False,

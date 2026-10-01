@@ -17,7 +17,8 @@
     "x": 3,
     "y": 17,
     "size": 61,
-    "opacity": 0.95
+    "opacity": 0.95,
+    "lock_for_users": true
   },
   "reading_guide": {
     "enabled": false,
