@@ -1,6 +1,7 @@
 """Settings management for Desktop Ruler."""
 import json
 import os
+import sys
 from typing import Any, Dict
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
@@ -19,11 +20,17 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "logo": {
         "enabled": True,
         "path": "assets/logo.png",
-        "x": 10,
-        "y": 28,
-        "size": 34,
+        "x": 3,
+        "y": 17,
+        "size": 61,
         "opacity": 0.95,
         "lock_for_users": True,
+    },
+       "calculator": {
+        "enabled": True,
+        "corner": "bottom_right",
+        "width": 240,
+        "height": 330,
     },
     "reading_guide": {
         "enabled": False,
@@ -57,7 +64,11 @@ class SettingsManager:
     """Handles loading and saving settings to a local JSON file."""
 
     def __init__(self, filename: str = "settings.json"):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
+        if getattr(sys, "frozen", False):
+            base_dir = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "DesktopRuler")
+            os.makedirs(base_dir, exist_ok=True)
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
         self.filepath = os.path.join(base_dir, filename)
         self.data: Dict[str, Any] = self.load()
 
@@ -73,6 +84,8 @@ class SettingsManager:
                         merged[key].update(val)
                     else:
                         merged[key] = val
+                if getattr(sys, "frozen", False):
+                    merged["logo"]["lock_for_users"] = True
                 return merged
         except Exception as e:
             print(f"Warning: Failed to load {self.filepath}, using defaults. Error: {e}")

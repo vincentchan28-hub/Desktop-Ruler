@@ -1,7 +1,7 @@
 {
   "window": {
-    "x": 1716,
-    "y": 955,
+    "x": 1728,
+    "y": 874,
     "width": 786,
     "height": 85
   },
@@ -15,10 +15,16 @@
     "enabled": true,
     "path": "assets/logo.png",
     "x": 0,
-    "y": 15,
-    "size": 61,
+    "y": 19,
+    "size": 52,
     "opacity": 0.95,
-    "lock_for_users": false
+    "lock_for_users": true
+  },
+  "calculator": {
+    "enabled": true,
+    "corner": "bottom_right",
+    "width": 240,
+    "height": 330
   },
   "reading_guide": {
     "enabled": false,

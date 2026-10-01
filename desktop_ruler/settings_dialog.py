@@ -1,12 +1,13 @@
 """Settings Dialog for Desktop Ruler.
 
 Provides a responsive, scrollable tabbed settings window with:
-- General Tab: Window behaviors, configurable line move step (for packing lists), reading guide, reset dimensions.
+- General Tab: Window behaviors, configurable line move step, reading guide, reset dimensions, calculator icon.
 - Appearance Tab: Preset colors, transparency, and Logo & Branding controls (upload file, position X/Y, size).
 - Shortcuts Tab: Comprehensive global shortcut list, interactive key recording, and preset switching.
 """
 
 import os
+import sys
 import shutil
 from typing import Optional, Dict
 from PySide6.QtCore import Qt, Signal, QSize
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
     QColorDialog,
     QFileDialog,
     QMessageBox,
+    QComboBox,
 )
 from desktop_ruler.settings import SettingsManager, DEFAULT_SETTINGS
 
@@ -124,6 +126,7 @@ class SettingsDialog(QDialog):
     reading_guide_changed = Signal(bool, int)
     move_step_changed = Signal(int)
     logo_changed = Signal()
+    calculator_changed = Signal()
     always_on_top_changed = Signal(bool)
     reset_geometry_requested = Signal()
     hotkey_rebound = Signal(str, int, int, str)
@@ -377,6 +380,24 @@ class SettingsDialog(QDialog):
         row_reset.addStretch()
         layout.addLayout(row_reset)
 
+        # 5. Calculator Icon
+        layout.addSpacing(6)
+        lbl_calc = QLabel("<b>Calculator Icon</b>")
+        lbl_calc.setStyleSheet("color: #F59E0B; font-size: 12px;")
+        layout.addWidget(lbl_calc)
+
+        self.cb_calc_enable = QCheckBox("Show calculator icon on ruler")
+        self.cb_calc_enable.setChecked(bool(self.settings.get("calculator", "enabled", True)))
+        self.cb_calc_enable.toggled.connect(self._on_calc_changed)
+        layout.addWidget(self.cb_calc_enable)
+
+        self.combo_calc_corner = QComboBox()
+        self.combo_calc_corner.addItems(["Bottom Right", "Bottom Left"])
+        corner = self.settings.get("calculator", "corner", "bottom_right")
+        self.combo_calc_corner.setCurrentIndex(1 if corner == "bottom_left" else 0)
+        self.combo_calc_corner.currentIndexChanged.connect(self._on_calc_changed)
+        layout.addWidget(self.combo_calc_corner)
+
         layout.addStretch()
         scroll.setWidget(content)
         self.tabs.addTab(scroll, "General")
@@ -385,6 +406,12 @@ class SettingsDialog(QDialog):
         self.lbl_move_step_val.setText(f"{step} px / step")
         self.settings.set("behavior", "move_step", step)
         self.move_step_changed.emit(step)
+
+    def _on_calc_changed(self, *args):
+        self.settings.set("calculator", "enabled", self.cb_calc_enable.isChecked())
+        corner = "bottom_left" if self.combo_calc_corner.currentIndex() == 1 else "bottom_right"
+        self.settings.set("calculator", "corner", corner)
+        self.calculator_changed.emit()
 
     def _on_always_on_top_toggled(self, checked: bool):
         self.settings.set("behavior", "always_on_top", checked)
@@ -491,6 +518,9 @@ class SettingsDialog(QDialog):
         """)
         self.btn_lock_logo.clicked.connect(self._toggle_logo_lock)
         row_upload.addWidget(self.btn_lock_logo)
+        if getattr(sys, "frozen", False):
+            self.btn_lock_logo.setVisible(False)
+            self.btn_upload_logo.setVisible(False)
 
         lf_layout.addLayout(row_upload)
 
@@ -818,13 +848,16 @@ class SettingsDialog(QDialog):
             self.slider_opacity.setValue(85)
             self._apply_color("#FBBF24")
 
+            self.cb_calc_enable.setChecked(True)
+            self.combo_calc_corner.setCurrentIndex(0)
+
             self.cb_logo_enable.setChecked(True)
-            self.slider_logo_x.setValue(10)
-            self.slider_logo_y.setValue(28)
-            self.slider_logo_size.setValue(34)
-            self.lbl_logo_x_val.setText("10 px")
-            self.lbl_logo_y_val.setText("28 px")
-            self.lbl_logo_size_val.setText("34 px")
+            self.slider_logo_x.setValue(3)
+            self.slider_logo_y.setValue(17)
+            self.slider_logo_size.setValue(61)
+            self.lbl_logo_x_val.setText("3 px")
+            self.lbl_logo_y_val.setText("17 px")
+            self.lbl_logo_size_val.setText("61 px")
             self._update_logo_thumbnail()
             self.logo_changed.emit()
 

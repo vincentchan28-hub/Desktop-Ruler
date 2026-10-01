@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 from desktop_ruler.settings import SettingsManager
 from desktop_ruler.settings_dialog import SettingsDialog
+from desktop_ruler.calculator_widget import CalculatorWindow
 
 
 class DesktopRuler(QWidget):
@@ -40,6 +41,7 @@ class DesktopRuler(QWidget):
         self.settings = settings_manager or SettingsManager()
         self.hotkey_manager = None
         self._settings_dialog: Optional[SettingsDialog] = None
+        self._calc_window = None
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -272,6 +274,7 @@ class DesktopRuler(QWidget):
         if self._settings_dialog is None:
             self._settings_dialog = SettingsDialog(parent=None, settings_manager=self.settings)
             self._settings_dialog.appearance_changed.connect(self._on_appearance_changed)
+            self._settings_dialog.calculator_changed.connect(self.update)
             self._settings_dialog.reading_guide_changed.connect(self._on_guide_changed)
             self._settings_dialog.move_step_changed.connect(self.set_move_step)
             self._settings_dialog.logo_changed.connect(self.reload_logo)
@@ -414,6 +417,8 @@ class DesktopRuler(QWidget):
 
             mm_idx += 1
 
+        self._draw_calc_icon(painter)
+
         # 5. Right-side resize grip dots
         painter.setPen(Qt.PenStyle.NoPen)
         grip_color = QColor(self.tick_color)
@@ -447,7 +452,9 @@ class DesktopRuler(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            if event.position().x() >= (self.width() - self.RESIZE_MARGIN):
+            if self._calc_rect().contains(event.position().toPoint()):
+                self.open_calculator()
+            elif event.position().x() >= (self.width() - self.RESIZE_MARGIN):
                 self._resizing = True
                 self._drag_start_pos = event.globalPosition().toPoint()
                 self._start_geometry = self.geometry()
@@ -604,6 +611,49 @@ class DesktopRuler(QWidget):
             self.settings.set("behavior", "always_on_top", True)
             self.show_toast("Always on Top: Enabled")
         self.show()
+
+    def _calc_rect(self) -> QRect:
+        if not self.settings.get("calculator", "enabled", True):
+            return QRect()
+        size, margin = 16, 6
+        if self.settings.get("calculator", "corner", "bottom_right") == "bottom_left":
+            x = margin
+            if self.logo_enabled and self._cached_scaled_logo is not None:
+                x = self.logo_x + self.logo_size + 4
+        else:
+            x = self.width() - size - self.RESIZE_MARGIN - 4
+        return QRect(x, self.height() - size - margin, size, size)
+
+    def _draw_calc_icon(self, painter) -> None:
+        r = self._calc_rect()
+        if r.isNull():
+            return
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(0, 0, 0), 1))
+        painter.drawRoundedRect(r.adjusted(0, 0, -1, -1), 2, 2)
+        painter.drawRect(r.x() + 3, r.y() + 3, r.width() - 7, 3)
+        for i in range(3):
+            for j in range(3):
+                painter.drawPoint(r.x() + 4 + i * 3, r.y() + 8 + j * 3)
+
+    def open_calculator(self) -> None:
+        w = int(self.settings.get("calculator", "width", 240))
+        h = int(self.settings.get("calculator", "height", 330))
+        self._calc_window = CalculatorWindow(w, h)
+        self._calc_window.size_changed.connect(self._save_calc_size)
+        r = self._calc_rect()
+        pos = self.mapToGlobal(r.topLeft())
+        y = pos.y() - h - 10
+        if y < 0:
+            y = pos.y() + r.height() + 10
+        self._calc_window.move(pos.x(), y)
+        self._calc_window.show()
+        self._calc_window.raise_()
+        self._calc_window.activateWindow()
+
+    def _save_calc_size(self, w: int, h: int) -> None:
+        self.settings.set("calculator", "width", w)
+        self.settings.set("calculator", "height", h)
 
     def reset_default_size(self) -> None:
         self.setGeometry(self.x(), self.y(), 600, 85)
