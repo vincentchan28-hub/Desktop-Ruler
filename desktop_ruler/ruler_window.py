@@ -88,8 +88,26 @@ class DesktopRuler(QWidget):
         self._toast_timer.setSingleShot(True)
         self._toast_timer.timeout.connect(self._clear_toast)
 
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.timeout.connect(self._save_geometry_now)
+
+        self._cached_scaled_logo: Optional[QPixmap] = None
+        self._load_logo()
+
+    def _update_cached_logo(self) -> None:
+        if self.logo_pixmap and not self.logo_pixmap.isNull():
+            self._cached_scaled_logo = self.logo_pixmap.scaled(
+                self.logo_size,
+                self.logo_size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        else:
+            self._cached_scaled_logo = None
+
     def _load_logo(self) -> None:
-        """Load logo image from configured path into QPixmap."""
+        """Load logo image from configured path into QPixmap and cache scaled version."""
         logo_cfg = self.settings.data.get("logo", {})
         self.logo_enabled = logo_cfg.get("enabled", True)
         self.logo_x = int(logo_cfg.get("x", 10))
@@ -104,6 +122,7 @@ class DesktopRuler(QWidget):
             self.logo_pixmap = QPixmap(full_path)
         else:
             self.logo_pixmap = None
+        self._update_cached_logo()
 
     def reload_logo(self) -> None:
         """Reload logo settings and image from disk."""
@@ -172,10 +191,8 @@ class DesktopRuler(QWidget):
             self.activateWindow()
 
     def move_relative(self, dx: int, dy: int) -> None:
-        new_x = self.x() + dx
-        new_y = self.y() + dy
-        self.setGeometry(new_x, new_y, self.width(), self.height())
-        self._save_geometry()
+        self.move(self.x() + dx, self.y() + dy)
+        self._schedule_save_geometry()
 
         if dy > 0:
             self.show_toast(f"▼ Moved Down {dy}px")
@@ -186,15 +203,15 @@ class DesktopRuler(QWidget):
 
     def adjust_length(self, delta: int) -> None:
         new_w = max(self.minimumWidth(), min(2500, self.width() + delta))
-        self.setGeometry(self.x(), self.y(), new_w, self.height())
-        self._save_geometry()
+        self.resize(new_w, self.height())
+        self._schedule_save_geometry()
         self.update()
         self.show_toast(f"Length: {self.width()}px")
 
     def adjust_thickness(self, delta: int) -> None:
         new_h = max(self.minimumHeight(), min(600, self.height() + delta))
-        self.setGeometry(self.x(), self.y(), self.width(), new_h)
-        self._save_geometry()
+        self.resize(self.width(), new_h)
+        self._schedule_save_geometry()
         self.update()
         self.show_toast(f"Thickness: {self.height()}px")
 
@@ -320,14 +337,8 @@ class DesktopRuler(QWidget):
             painter.drawLine(4, bottom_y, w - 4, bottom_y)
 
         # 3. Draw Embedded Logo on the Left
-        if self.logo_enabled and self.logo_pixmap and not self.logo_pixmap.isNull():
-            scaled_logo = self.logo_pixmap.scaled(
-                self.logo_size,
-                self.logo_size,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            painter.drawPixmap(self.logo_x, self.logo_y, scaled_logo)
+        if self.logo_enabled and self._cached_scaled_logo and not self._cached_scaled_logo.isNull():
+            painter.drawPixmap(self.logo_x, self.logo_y, self._cached_scaled_logo)
 
         # 4. Ticks and Centimetre Numbers
         px_per_mm = self.pixels_per_millimeter()
@@ -434,24 +445,34 @@ class DesktopRuler(QWidget):
         if self._resizing:
             delta_x = event.globalPosition().toPoint().x() - self._drag_start_pos.x()
             new_width = max(self.minimumWidth(), self._start_geometry.width() + delta_x)
-            self.setGeometry(self.x(), self.y(), new_width, self.height())
-            self._save_geometry()
+            self.resize(new_width, self.height())
         elif self._dragging:
             new_pos = event.globalPosition().toPoint() - self._drag_start_pos
-            self.setGeometry(new_pos.x(), new_pos.y(), self.width(), self.height())
-            self._save_geometry()
+            self.move(new_pos.x(), new_pos.y())
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
             self._resizing = False
-            self._save_geometry()
+            self._save_geometry_now()
+
+    def _schedule_save_geometry(self) -> None:
+        """Debounce geometry saving so rapid movements don't thrash disk I/O."""
+        self._save_timer.start(400)
+
+    def _save_geometry_now(self) -> None:
+        """Save geometry in a single batch write instead of multiple blocking disk writes."""
+        self.settings.data.setdefault("window", {})
+        self.settings.data["window"].update({
+            "x": self.x(),
+            "y": self.y(),
+            "width": self.width(),
+            "height": self.height(),
+        })
+        self.settings.save()
 
     def _save_geometry(self) -> None:
-        self.settings.set("window", "x", self.x())
-        self.settings.set("window", "y", self.y())
-        self.settings.set("window", "width", self.width())
-        self.settings.set("window", "height", self.height())
+        self._save_geometry_now()
 
     def keyPressEvent(self, event) -> None:
         key = event.key()
