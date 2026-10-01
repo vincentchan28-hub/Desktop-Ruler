@@ -1,9 +1,9 @@
 {
   "window": {
-    "x": 1728,
-    "y": 874,
-    "width": 786,
-    "height": 85
+    "x": 1511,
+    "y": 1025,
+    "width": 806,
+    "height": 105
   },
   "appearance": {
     "color": "#FBBF24",
@@ -15,8 +15,8 @@
     "enabled": true,
     "path": "assets/logo.png",
     "x": 0,
-    "y": 19,
-    "size": 52,
+    "y": 4,
+    "size": 46,
     "opacity": 0.95,
     "lock_for_users": true
   },
@@ -35,6 +35,10 @@
     "always_on_top": true,
     "click_through": false,
     "move_step": 28
+  },
+  "persistent_text": {
+    "enabled": true,
+    "text": ""
   },
   "hotkeys": {
     "toggle_visibility": "Win + Ctrl + Alt + H",

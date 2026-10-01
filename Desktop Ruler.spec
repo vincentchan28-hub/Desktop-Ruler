@@ -5,7 +5,7 @@ a = Analysis(
     ['desktop_ruler/main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('desktop_ruler/x03.png', 'desktop_ruler')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['desktop_ruler/x03.png'],
 )

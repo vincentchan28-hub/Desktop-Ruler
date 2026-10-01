@@ -25,6 +25,13 @@ from PySide6.QtWidgets import (
     QWidget,
     QMenu,
     QApplication,
+    QLineEdit,
+    QToolButton,
+    QDialog,
+    QLabel,
+    QPushButton,
+    QHBoxLayout,
+    QVBoxLayout,
 )
 from desktop_ruler.settings import SettingsManager
 from desktop_ruler.settings_dialog import SettingsDialog
@@ -97,6 +104,12 @@ class DesktopRuler(QWidget):
         self._cached_scaled_logo: Optional[QPixmap] = None
         self._load_logo()
 
+        # Persistent text field
+        self.text_field: Optional[QLineEdit] = None
+        self.btn_clear: Optional[QToolButton] = None
+        self.btn_copy: Optional[QToolButton] = None
+        self._init_text_field()
+
     def _update_cached_logo(self) -> None:
         if self.logo_pixmap and not self.logo_pixmap.isNull():
             self._cached_scaled_logo = self.logo_pixmap.scaled(
@@ -148,6 +161,206 @@ class DesktopRuler(QWidget):
 
         self.logo_pixmap = pixmap
         self._update_cached_logo()
+
+    def _init_text_field(self) -> None:
+        """Initialize the persistent text field and buttons."""
+        # Create QLineEdit for text input
+        self.text_field = QLineEdit(self)
+        self.text_field.setFont(QFont("Times New Roman", 11))
+        self.text_field.setPlaceholderText("Click to add text...")
+        self.text_field.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.text_field.setStyleSheet("""
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 50);
+                border: 1px solid rgba(200, 200, 200, 80);
+                border-radius: 4px;
+                padding: 2px 6px;
+                color: #1F2937;
+            }
+            QLineEdit:focus {
+                border: 1px solid rgba(245, 158, 11, 150);
+                background-color: rgba(255, 255, 255, 70);
+            }
+        """)
+        self.text_field.textChanged.connect(self._on_text_changed)
+        
+        # Load saved text
+        saved_text = self.settings.get("persistent_text", "text", "")
+        if saved_text:
+            self.text_field.setText(saved_text)
+        
+        # Create Clear button (X icon - line style)
+        self.btn_clear = QToolButton(self)
+        self.btn_clear.setText("✕")
+        self.btn_clear.setFont(QFont("Segoe UI", 10))
+        self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_clear.setStyleSheet("""
+            QToolButton {
+                background-color: transparent;
+                border: none;
+                color: rgba(0, 0, 0, 180);
+                font-weight: normal;
+            }
+            QToolButton:hover {
+                color: rgba(0, 0, 0, 220);
+            }
+        """)
+        self.btn_clear.setFixedSize(20, 20)
+        self.btn_clear.clicked.connect(self._clear_text)
+        
+        # Create Copy button (clipboard icon - line style)
+        self.btn_copy = QToolButton(self)
+        self.btn_copy.setText("⧉")
+        self.btn_copy.setFont(QFont("Segoe UI Symbol", 12))
+        self.btn_copy.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_copy.setStyleSheet("""
+            QToolButton {
+                background-color: transparent;
+                border: none;
+                color: rgba(0, 0, 0, 180);
+            }
+            QToolButton:hover {
+                color: rgba(0, 0, 0, 220);
+            }
+        """)
+        self.btn_copy.setFixedSize(20, 20)
+        self.btn_copy.clicked.connect(self._copy_text)
+        
+        # Update button visibility and position
+        self._update_text_buttons()
+        self._position_text_field()
+
+    def _on_text_changed(self, text: str) -> None:
+        """Save text to settings when changed."""
+        self.settings.set("persistent_text", "text", text)
+        self._update_text_buttons()
+
+    def _clear_text(self) -> None:
+        """Clear the persistent text."""
+        self.text_field.setText("")
+        self.settings.set("persistent_text", "text", "")
+        self._update_text_buttons()
+        self.show_toast("Text cleared")
+
+    def _copy_text(self) -> None:
+        """Copy text to clipboard."""
+        text = self.text_field.text()
+        if text:
+            clipboard = QApplication.clipboard()
+            clipboard.setText(text)
+            self.show_toast("Copied to clipboard")
+
+    def _update_text_buttons(self) -> None:
+        """Show/hide buttons based on whether text exists."""
+        has_text = bool(self.text_field.text())
+        self.btn_clear.setVisible(has_text)
+        self.btn_copy.setVisible(has_text)
+
+    def _position_text_field(self) -> None:
+        """Position the text field and buttons in the lower-middle of the ruler."""
+        if not self.text_field:
+            return
+        
+        w = self.width()
+        h = self.height()
+        
+        # Field width: 40% of ruler width (CHANGE THIS VALUE to adjust width)
+        field_width = int(w * 0.40)
+        # Field height: 35px (CHANGE THIS VALUE to adjust height)
+        field_height = 35
+        
+        # Centered horizontally
+        field_x = (w - field_width) // 2
+        
+        # Vertically: 62% down from top
+        field_y = int(h * 0.65)
+        
+        self.text_field.setGeometry(field_x + 20, field_y - 8, field_width - 40, field_height)
+        
+        # Position buttons
+        self.btn_clear.move(field_x + 2, field_y + 6)
+        self.btn_copy.move(field_x + field_width - 20, field_y + 6)
+
+    def show_persistent_text_prompt(self) -> None:
+        """Show dialog on startup if persistent text exists."""
+        saved_text = self.settings.get("persistent_text", "text", "")
+        if not saved_text:
+            return
+        
+        # Create dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Persistent Text Field")
+        dialog.setModal(True)
+        dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #0F172A;
+                color: #F8FAFC;
+            }
+            QLabel {
+                color: #E2E8F0;
+                font-size: 12px;
+                padding: 10px;
+            }
+            QPushButton {
+                padding: 6px 16px;
+                border-radius: 5px;
+                font-weight: bold;
+                font-size: 11px;
+                min-width: 70px;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(12)
+        
+        # Message label
+        msg = f'You have "{saved_text}" in the ruler. Do you want to clear it?'
+        label = QLabel(msg)
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        btn_continue = QPushButton("Continue")
+        btn_continue.setStyleSheet("""
+            QPushButton {
+                background-color: #F59E0B;
+                color: #0F172A;
+            }
+            QPushButton:hover {
+                background-color: #FBBF24;
+            }
+        """)
+        btn_continue.clicked.connect(dialog.accept)
+        
+        btn_clear = QPushButton("Clear")
+        btn_clear.setStyleSheet("""
+            QPushButton {
+                background-color: #EF4444;
+                color: #FFFFFF;
+            }
+            QPushButton:hover {
+                background-color: #DC2626;
+            }
+        """)
+        btn_clear.clicked.connect(self._clear_text_on_prompt)
+        btn_clear.clicked.connect(dialog.accept)
+        
+        btn_layout.addWidget(btn_continue)
+        btn_layout.addWidget(btn_clear)
+        layout.addLayout(btn_layout)
+        
+        dialog.exec()
+
+    def _clear_text_on_prompt(self) -> None:
+        """Clear text from the prompt dialog."""
+        self.text_field.setText("")
+        self.settings.set("persistent_text", "text", "")
+        self._update_text_buttons()
+
 
     def reload_logo(self) -> None:
         """Reload logo settings and image from disk."""
@@ -439,7 +652,8 @@ class DesktopRuler(QWidget):
             text_metrics = painter.fontMetrics()
             toast_w = text_metrics.horizontalAdvance(toast_text) + 24
             toast_h = 24
-            toast_x = max(10, (w - toast_w) // 2)
+            # Changed from center to left side
+            toast_x = 10
             toast_y = h - toast_h - 6
 
             pill_bg = QColor(220, 38, 38, 220) if self._toast_is_error else QColor(30, 41, 59, 230)
@@ -660,3 +874,16 @@ class DesktopRuler(QWidget):
         self._save_geometry()
         self.update()
         self.show_toast("Reset to 600×85 px")
+
+    def resizeEvent(self, event) -> None:
+        """Reposition text field when ruler is resized."""
+        super().resizeEvent(event)
+        self._position_text_field()
+
+    def showEvent(self, event) -> None:
+        """Called when window is shown."""
+        super().showEvent(event)
+        # Schedule prompt after window is visible
+        QTimer.singleShot(300, self.show_persistent_text_prompt)
+        # Reposition text field
+        QTimer.singleShot(50, self._position_text_field)

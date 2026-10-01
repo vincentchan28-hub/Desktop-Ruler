@@ -26,7 +26,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "opacity": 0.95,
         "lock_for_users": True,
     },
-       "calculator": {
+    "calculator": {
         "enabled": True,
         "corner": "bottom_right",
         "width": 240,
@@ -41,6 +41,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "always_on_top": True,
         "click_through": False,
         "move_step": 28,
+    },
+    "persistent_text": {
+        "enabled": True,
+        "text": "",
     },
     "hotkeys": {
         "toggle_visibility": "<win>+<shift>+r",
