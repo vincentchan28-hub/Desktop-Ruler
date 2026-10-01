@@ -1,0 +1,38 @@
+{
+  "window": {
+    "x": 1637,
+    "y": 884,
+    "width": 635,
+    "height": 75
+  },
+  "appearance": {
+    "color": "#FBBF24",
+    "opacity": 0.85,
+    "text_color": "#1F2937",
+    "tick_color": "#374151"
+  },
+  "reading_guide": {
+    "enabled": false,
+    "line_height": 28,
+    "dim_opacity": 0.35
+  },
+  "behavior": {
+    "always_on_top": true,
+    "click_through": false
+  },
+  "hotkeys": {
+    "toggle_visibility": "<win>+<shift>+r",
+    "toggle_always_on_top": "<win>+<shift>+t",
+    "increase_length": "<win>+<shift>++",
+    "decrease_length": "<win>+<shift>+-",
+    "move_up": "<win>+<shift>+<up>",
+    "move_down": "<win>+<shift>+<down>",
+    "move_left": "<win>+<shift>+<left>",
+    "move_right": "<win>+<shift>+<right>",
+    "increase_thickness": "<win>+<alt>+<up>",
+    "decrease_thickness": "<win>+<alt>+<down>",
+    "increase_opacity": "<win>+<alt>+<right>",
+    "decrease_opacity": "<win>+<alt>+<left>",
+    "toggle_click_through": "<win>+<shift>+c"
+  }
+}
