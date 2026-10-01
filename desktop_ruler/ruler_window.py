@@ -2,11 +2,12 @@
 
 Provides a frameless, floating, semi-transparent ruler with physical mm/cm markings,
 mouse dragging, resize handles, reading guide mode, toast alerts, click-through mode,
-configurable whole-ruler vertical movement (for packing lists & documents),
+embedded brand logo rendering, configurable whole-ruler vertical movement,
 and integration with the dedicated tabbed Settings Dialog.
 """
 
 import sys
+import os
 from typing import Optional
 from PySide6.QtCore import Qt, QPoint, QRect, QSize, QTimer
 from PySide6.QtGui import (
@@ -14,6 +15,7 @@ from PySide6.QtGui import (
     QColor,
     QPen,
     QFont,
+    QPixmap,
     QMouseEvent,
     QPaintEvent,
     QAction,
@@ -29,7 +31,7 @@ from desktop_ruler.settings_dialog import SettingsDialog
 
 
 class DesktopRuler(QWidget):
-    """Frameless, floating, draggable on-screen ruler with settings support."""
+    """Frameless, floating, draggable on-screen ruler with logo branding & settings."""
 
     RESIZE_MARGIN = 14
 
@@ -70,6 +72,10 @@ class DesktopRuler(QWidget):
         # Vertical movement step per line (configurable in settings for packing lists)
         self.move_step = int(self.settings.get("behavior", "move_step", 28))
 
+        # Embedded Logo configuration
+        self.logo_pixmap: Optional[QPixmap] = None
+        self._load_logo()
+
         self._dragging = False
         self._resizing = False
         self._drag_start_pos = QPoint()
@@ -81,6 +87,28 @@ class DesktopRuler(QWidget):
         self._toast_timer = QTimer(self)
         self._toast_timer.setSingleShot(True)
         self._toast_timer.timeout.connect(self._clear_toast)
+
+    def _load_logo(self) -> None:
+        """Load logo image from configured path into QPixmap."""
+        logo_cfg = self.settings.data.get("logo", {})
+        self.logo_enabled = logo_cfg.get("enabled", True)
+        self.logo_x = int(logo_cfg.get("x", 10))
+        self.logo_y = int(logo_cfg.get("y", 28))
+        self.logo_size = int(logo_cfg.get("size", 34))
+
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        logo_path = logo_cfg.get("path", "assets/logo.png")
+        full_path = os.path.join(base_dir, logo_path) if not os.path.isabs(logo_path) else logo_path
+
+        if os.path.exists(full_path):
+            self.logo_pixmap = QPixmap(full_path)
+        else:
+            self.logo_pixmap = None
+
+    def reload_logo(self) -> None:
+        """Reload logo settings and image from disk."""
+        self._load_logo()
+        self.update()
 
     def set_hotkey_manager(self, manager) -> None:
         self.hotkey_manager = manager
@@ -108,7 +136,6 @@ class DesktopRuler(QWidget):
         return dpi / 25.4
 
     def handle_global_action(self, action: str) -> None:
-        """Respond to global shortcuts triggered by the background thread."""
         if action == "move_down":
             self.move_relative(0, self.move_step)
         elif action == "move_up":
@@ -145,10 +172,8 @@ class DesktopRuler(QWidget):
             self.activateWindow()
 
     def move_relative(self, dx: int, dy: int) -> None:
-        """Move the entire ruler position on screen."""
         new_x = self.x() + dx
         new_y = self.y() + dy
-        # Explicit setGeometry ensures Windows updates coordinates on frameless windows
         self.setGeometry(new_x, new_y, self.width(), self.height())
         self._save_geometry()
 
@@ -204,12 +229,12 @@ class DesktopRuler(QWidget):
             self.show_toast("Click-Through OFF")
 
     def open_settings_dialog(self) -> None:
-        """Launch the dedicated tabbed Settings window."""
         if self._settings_dialog is None:
             self._settings_dialog = SettingsDialog(parent=None, settings_manager=self.settings)
             self._settings_dialog.appearance_changed.connect(self._on_appearance_changed)
             self._settings_dialog.reading_guide_changed.connect(self._on_guide_changed)
             self._settings_dialog.move_step_changed.connect(self.set_move_step)
+            self._settings_dialog.logo_changed.connect(self.reload_logo)
             self._settings_dialog.always_on_top_changed.connect(self._on_always_on_top_changed)
             self._settings_dialog.reset_geometry_requested.connect(self.reset_default_size)
             self._settings_dialog.reset_defaults_requested.connect(self._on_defaults_restored)
@@ -245,6 +270,7 @@ class DesktopRuler(QWidget):
         self.reading_guide_enabled = False
         self.line_height = 28
         self.move_step = 28
+        self._load_logo()
         self._update_text_contrast()
         self.show_toast("All settings restored to defaults")
         self.update()
@@ -262,10 +288,12 @@ class DesktopRuler(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
         w = self.width()
         h = self.height()
 
+        # 1. Ruler Body Background
         bg_color = QColor(self.ruler_color)
         bg_color.setAlphaF(self.opacity)
         painter.setBrush(bg_color)
@@ -276,6 +304,7 @@ class DesktopRuler(QWidget):
         painter.setPen(border_pen)
         painter.drawRoundedRect(0, 0, w - 1, h - 1, 6, 6)
 
+        # 2. Reading Guide Mode
         if self.reading_guide_enabled:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(0, 0, 0, 75))
@@ -290,8 +319,23 @@ class DesktopRuler(QWidget):
             painter.drawLine(4, guide_y, w - 4, guide_y)
             painter.drawLine(4, bottom_y, w - 4, bottom_y)
 
+        # 3. Draw Embedded Logo on the Left
+        if self.logo_enabled and self.logo_pixmap and not self.logo_pixmap.isNull():
+            scaled_logo = self.logo_pixmap.scaled(
+                self.logo_size,
+                self.logo_size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            painter.drawPixmap(self.logo_x, self.logo_y, scaled_logo)
+
+        # 4. Ticks and Centimetre Numbers
         px_per_mm = self.pixels_per_millimeter()
+        # Origin starts gracefully; if logo is placed at the top tick line, shift origin
         origin_x = 16.0
+        if self.logo_enabled and self.logo_pixmap and self.logo_y < 24:
+            origin_x = max(16.0, float(self.logo_x + self.logo_size + 8))
+
         max_x = float(w - 20)
 
         font = QFont("Segoe UI", 8)
@@ -336,6 +380,7 @@ class DesktopRuler(QWidget):
 
             mm_idx += 1
 
+        # 5. Right-side resize grip dots
         painter.setPen(Qt.PenStyle.NoPen)
         grip_color = QColor(self.tick_color)
         grip_color.setAlpha(130)
@@ -345,6 +390,7 @@ class DesktopRuler(QWidget):
         for offset in (-8, 0, 8):
             painter.drawEllipse(grip_x, mid_y + offset, 3, 3)
 
+        # 6. Toast Notification Banner
         if self._toast_message:
             font_toast = QFont("Segoe UI", 8)
             font_toast.setBold(True)
@@ -408,17 +454,9 @@ class DesktopRuler(QWidget):
         self.settings.set("window", "height", self.height())
 
     def keyPressEvent(self, event) -> None:
-        """Handle keyboard actions when ruler is active.
-        
-        Down / Up arrows or J / K: Move the whole ruler up or down by move_step.
-        Left / Right arrows: Move ruler left or right.
-        Alt + Up / Down: Adjust thickness.
-        + / -: Adjust length.
-        """
         key = event.key()
         modifiers = event.modifiers()
 
-        # Alt modifier: adjust thickness
         if modifiers & Qt.KeyboardModifier.AltModifier:
             if key == Qt.Key.Key_Up:
                 self.adjust_thickness(5)
@@ -456,7 +494,7 @@ class DesktopRuler(QWidget):
     def _show_context_menu(self, global_pos: QPoint) -> None:
         menu = QMenu(self)
 
-        settings_act = QAction("⚙ Settings (Preferences & Hotkeys)...", self)
+        settings_act = QAction("⚙ Settings (Preferences, Logo & Hotkeys)...", self)
         font = settings_act.font()
         font.setBold(True)
         settings_act.setFont(font)

@@ -16,6 +16,14 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "text_color": "#1F2937",
         "tick_color": "#374151",
     },
+    "logo": {
+        "enabled": True,
+        "path": "assets/logo.png",
+        "x": 10,
+        "y": 28,
+        "size": 34,
+        "opacity": 0.95,
+    },
     "reading_guide": {
         "enabled": False,
         "line_height": 28,
@@ -24,7 +32,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "behavior": {
         "always_on_top": True,
         "click_through": False,
-        "move_step": 28,  # Pixels the ruler shifts when pressing Up/Down
+        "move_step": 28,
     },
     "hotkeys": {
         "toggle_visibility": "<win>+<shift>+r",

@@ -11,6 +11,14 @@
     "text_color": "#1F2937",
     "tick_color": "#374151"
   },
+  "logo": {
+    "enabled": true,
+    "path": "assets/logo.png",
+    "x": 10,
+    "y": 28,
+    "size": 34,
+    "opacity": 0.95
+  },
   "reading_guide": {
     "enabled": false,
     "line_height": 28,
