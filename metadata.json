@@ -1,0 +1,6 @@
+{
+  "name": "Desktop Ruler — Python Project Studio",
+  "description": "Interactive Python Desktop Ruler project workspace with interactive preview simulator, development plan, and step-by-step VS Code setup guide.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

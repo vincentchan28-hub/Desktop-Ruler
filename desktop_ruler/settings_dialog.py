@@ -1,0 +1,611 @@
+"""Settings Dialog for Desktop Ruler.
+
+Provides a tabbed settings window with:
+- General Tab: Window behaviors, reading guide line spacing, reset dimensions.
+- Appearance Tab: Preset colors, custom hex picker, live transparency slider, and DPI calibration.
+- Shortcuts Tab: Comprehensive global shortcut list, interactive key recording, and preset switching.
+"""
+
+from typing import Optional, Dict
+from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtGui import QColor, QFont, QKeySequence
+from PySide6.QtWidgets import (
+    QDialog,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QTabWidget,
+    QLabel,
+    QPushButton,
+    QCheckBox,
+    QSlider,
+    QSpinBox,
+    QScrollArea,
+    QFrame,
+    QColorDialog,
+    QMessageBox,
+)
+from desktop_ruler.settings import SettingsManager, DEFAULT_SETTINGS
+
+
+class KeyRecordButton(QPushButton):
+    """Button that listens for a key combination when clicked."""
+    key_recorded = Signal(int, int, str)  # modifiers, vk_code, key_text
+
+    def __init__(self, current_text: str = ""):
+        super().__init__(current_text or "Record Key")
+        self.is_recording = False
+        self._default_text = current_text
+        self.setCheckable(True)
+        self.clicked.connect(self._toggle_recording)
+        self.setStyleSheet("""
+            QPushButton {
+                background-color: #1E293B;
+                color: #F8FAFC;
+                border: 1px solid #475569;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-family: Consolas, monospace;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #334155;
+                border-color: #F59E0B;
+            }
+            QPushButton:checked {
+                background-color: #F59E0B;
+                color: #0F172A;
+                font-weight: bold;
+                border-color: #D97706;
+            }
+        """)
+
+    def _toggle_recording(self, checked: bool):
+        self.is_recording = checked
+        if checked:
+            self.setText("Press shortcut keys...")
+            self.grabKeyboard()
+        else:
+            self.setText(self._default_text)
+            self.releaseKeyboard()
+
+    def set_key_text(self, text: str):
+        self._default_text = text
+        self.setText(text)
+        self.setChecked(False)
+        self.is_recording = False
+
+    def keyPressEvent(self, event):
+        if not self.is_recording:
+            super().keyPressEvent(event)
+            return
+
+        key = event.key()
+        modifiers = event.modifiers()
+
+        # Ignore standalone modifier presses
+        if key in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt, Qt.Key.Key_Meta):
+            return
+
+        mod_win32 = 0x4000  # MOD_NOREPEAT
+        parts = []
+
+        if modifiers & Qt.KeyboardModifier.MetaModifier:
+            mod_win32 |= 0x0008  # MOD_WIN
+            parts.append("Win")
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            mod_win32 |= 0x0002  # MOD_CONTROL
+            parts.append("Ctrl")
+        if modifiers & Qt.KeyboardModifier.AltModifier:
+            mod_win32 |= 0x0001  # MOD_ALT
+            parts.append("Alt")
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            mod_win32 |= 0x0004  # MOD_SHIFT
+            parts.append("Shift")
+
+        # Map key to virtual key code
+        key_str = QKeySequence(key).toString()
+        parts.append(key_str)
+        combo_text = " + ".join(parts)
+
+        vk_code = event.nativeVirtualKey() if hasattr(event, "nativeVirtualKey") else key
+
+        self.releaseKeyboard()
+        self.setChecked(False)
+        self.is_recording = False
+        self.set_key_text(combo_text)
+        self.key_recorded.emit(mod_win32, vk_code, combo_text)
+
+
+class SettingsDialog(QDialog):
+    """Tabbed dialog for managing Desktop Ruler settings."""
+
+    # Live update signals to notify the ruler immediately
+    appearance_changed = Signal(str, float)      # (hex_color, opacity)
+    reading_guide_changed = Signal(bool, int)    # (enabled, line_height)
+    always_on_top_changed = Signal(bool)         # (enabled)
+    reset_geometry_requested = Signal()
+    hotkey_rebound = Signal(str, int, int, str)  # (action, mod, vk, text)
+    reset_defaults_requested = Signal()
+
+    def __init__(self, parent=None, settings_manager: Optional[SettingsManager] = None):
+        super().__init__(parent)
+        self.settings = settings_manager or SettingsManager()
+
+        self.setWindowTitle("Desktop Ruler Settings")
+        self.resize(540, 520)
+        self.setMinimumSize(QSize(480, 460))
+
+        # Modern Dark Slate Theme styling
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #0F172A;
+                color: #F8FAFC;
+                font-family: 'Segoe UI', system-ui, sans-serif;
+            }
+            QTabWidget::pane {
+                border: 1px solid #334155;
+                background-color: #1E293B;
+                border-radius: 8px;
+                top: -1px;
+            }
+            QTabBar::tab {
+                background-color: #0F172A;
+                color: #94A3B8;
+                padding: 8px 18px;
+                margin-right: 4px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+                border: 1px solid #1E293B;
+                font-weight: 600;
+                font-size: 12px;
+            }
+            QTabBar::tab:selected {
+                background-color: #1E293B;
+                color: #F59E0B;
+                border: 1px solid #334155;
+                border-bottom: 1px solid #1E293B;
+            }
+            QTabBar::tab:hover:!selected {
+                background-color: #1E293B;
+                color: #F1F5F9;
+            }
+            QLabel {
+                color: #E2E8F0;
+                font-size: 12px;
+            }
+            QCheckBox {
+                color: #E2E8F0;
+                font-size: 12px;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 4px;
+                border: 1px solid #475569;
+                background-color: #0F172A;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #F59E0B;
+                border-color: #D97706;
+            }
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #334155;
+                border-radius: 3px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #F59E0B;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #F8FAFC;
+                border: 1px solid #CBD5E1;
+                width: 14px;
+                margin-top: -4px;
+                margin-bottom: -4px;
+                border-radius: 7px;
+            }
+            QSpinBox {
+                background-color: #0F172A;
+                color: #F8FAFC;
+                border: 1px solid #475569;
+                border-radius: 4px;
+                padding: 4px 8px;
+            }
+            QPushButton.action-btn {
+                background-color: #334155;
+                color: #F8FAFC;
+                border: 1px solid #475569;
+                border-radius: 6px;
+                padding: 6px 14px;
+                font-weight: 600;
+                font-size: 12px;
+            }
+            QPushButton.action-btn:hover {
+                background-color: #475569;
+                border-color: #F59E0B;
+            }
+            QPushButton.primary-btn {
+                background-color: #F59E0B;
+                color: #0F172A;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 16px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton.primary-btn:hover {
+                background-color: #FBBF24;
+            }
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+        """)
+
+        # Main Layout
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(14)
+
+        # Tab Widget
+        self.tabs = QTabWidget(self)
+        main_layout.addWidget(self.tabs)
+
+        # Build individual tabs
+        self._build_general_tab()
+        self._build_appearance_tab()
+        self._build_shortcuts_tab()
+
+        # Bottom Bar: Restore Defaults + Close
+        bottom_bar = QHBoxLayout()
+        self.btn_restore = QPushButton("Restore All Defaults", self)
+        self.btn_restore.setProperty("class", "action-btn")
+        self.btn_restore.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #EF4444;
+                border: 1px solid #7F1D1D;
+                border-radius: 6px;
+                padding: 6px 14px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #450A0A;
+                border-color: #DC2626;
+            }
+        """)
+        self.btn_restore.clicked.connect(self._restore_defaults)
+        bottom_bar.addWidget(self.btn_restore)
+
+        bottom_bar.addStretch()
+
+        self.btn_close = QPushButton("Close", self)
+        self.btn_close.setProperty("class", "primary-btn")
+        self.btn_close.clicked.connect(self.accept)
+        bottom_bar.addWidget(self.btn_close)
+
+        main_layout.addLayout(bottom_bar)
+
+    # -------------------------------------------------------------------------
+    # TAB 1: General Settings
+    # -------------------------------------------------------------------------
+    def _build_general_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+
+        # Section 1: Window Behavior
+        lbl_sec1 = QLabel("<b>Window Behavior</b>")
+        lbl_sec1.setStyleSheet("color: #F59E0B; font-size: 13px;")
+        layout.addWidget(lbl_sec1)
+
+        self.cb_always_on_top = QCheckBox("Keep Ruler Always on Top of other windows")
+        is_top = self.settings.get("behavior", "always_on_top", True)
+        self.cb_always_on_top.setChecked(is_top)
+        self.cb_always_on_top.toggled.connect(self._on_always_on_top_toggled)
+        layout.addWidget(self.cb_always_on_top)
+
+        # Section 2: Reading Guide Mode
+        layout.addSpacing(8)
+        lbl_sec2 = QLabel("<b>Reading Guide Mode</b>")
+        lbl_sec2.setStyleSheet("color: #F59E0B; font-size: 13px;")
+        layout.addWidget(lbl_sec2)
+
+        self.cb_guide_enable = QCheckBox("Enable Reading Guide (dims surrounding document text)")
+        guide_cfg = self.settings.data.get("reading_guide", {})
+        self.cb_guide_enable.setChecked(guide_cfg.get("enabled", False))
+        self.cb_guide_enable.toggled.connect(self._on_guide_toggled)
+        layout.addWidget(self.cb_guide_enable)
+
+        row_line = QHBoxLayout()
+        row_line.addWidget(QLabel("Reading Line Height (Spacing):"))
+        self.spin_line_height = QSpinBox()
+        self.spin_line_height.setRange(16, 120)
+        self.spin_line_height.setSuffix(" px")
+        self.spin_line_height.setValue(guide_cfg.get("line_height", 28))
+        self.spin_line_height.valueChanged.connect(self._on_guide_toggled)
+        row_line.addWidget(self.spin_line_height)
+        row_line.addStretch()
+        layout.addLayout(row_line)
+
+        # Section 3: Window Dimensions Reset
+        layout.addSpacing(8)
+        lbl_sec3 = QLabel("<b>Ruler Size & Position</b>")
+        lbl_sec3.setStyleSheet("color: #F59E0B; font-size: 13px;")
+        layout.addWidget(lbl_sec3)
+
+        row_reset = QHBoxLayout()
+        btn_reset_geo = QPushButton("Reset Ruler to Default Size (600×85 px)")
+        btn_reset_geo.setStyleSheet("""
+            QPushButton {
+                background-color: #334155;
+                color: #F8FAFC;
+                border: 1px solid #475569;
+                border-radius: 6px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover { background-color: #475569; }
+        """)
+        btn_reset_geo.clicked.connect(self.reset_geometry_requested.emit)
+        row_reset.addWidget(btn_reset_geo)
+        row_reset.addStretch()
+        layout.addLayout(row_reset)
+
+        layout.addStretch()
+        self.tabs.addTab(tab, "General")
+
+    def _on_always_on_top_toggled(self, checked: bool):
+        self.settings.set("behavior", "always_on_top", checked)
+        self.always_on_top_changed.emit(checked)
+
+    def _on_guide_toggled(self):
+        enabled = self.cb_guide_enable.isChecked()
+        height = self.spin_line_height.value()
+        self.settings.set("reading_guide", "enabled", enabled)
+        self.settings.set("reading_guide", "line_height", height)
+        self.reading_guide_changed.emit(enabled, height)
+
+    # -------------------------------------------------------------------------
+    # TAB 2: Appearance & Physical Scale
+    # -------------------------------------------------------------------------
+    def _build_appearance_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+
+        # Color Presets
+        lbl_color = QLabel("<b>Ruler Color Scheme</b>")
+        lbl_color.setStyleSheet("color: #F59E0B; font-size: 13px;")
+        layout.addWidget(lbl_color)
+
+        palette_row = QHBoxLayout()
+        presets = [
+            ("Amber", "#FBBF24"),
+            ("Cyan", "#38BDF8"),
+            ("Emerald", "#34D399"),
+            ("Ruby", "#F87171"),
+            ("White", "#F3F4F6"),
+            ("Slate", "#1E293B"),
+        ]
+        current_hex = self.settings.get("appearance", "color", "#FBBF24")
+
+        for name, hex_val in presets:
+            btn = QPushButton(name)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {hex_val};
+                    color: {"#0F172A" if name != "Slate" else "#FFFFFF"};
+                    font-weight: bold;
+                    border: 2px solid {"#FFFFFF" if hex_val == current_hex else "#334155"};
+                    border-radius: 6px;
+                    padding: 6px 12px;
+                }}
+            """)
+            btn.clicked.connect(lambda ch, h=hex_val: self._apply_color(h))
+            palette_row.addWidget(btn)
+
+        layout.addLayout(palette_row)
+
+        # Custom Color Picker button
+        btn_custom = QPushButton("Pick Custom Color...")
+        btn_custom.setStyleSheet("""
+            QPushButton {
+                background-color: #334155;
+                color: #F8FAFC;
+                border: 1px solid #475569;
+                border-radius: 6px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover { background-color: #475569; }
+        """)
+        btn_custom.clicked.connect(self._pick_custom_color)
+        layout.addWidget(btn_custom)
+
+        # Opacity Slider
+        layout.addSpacing(8)
+        lbl_opacity = QLabel("<b>Transparency (Opacity)</b>")
+        lbl_opacity.setStyleSheet("color: #F59E0B; font-size: 13px;")
+        layout.addWidget(lbl_opacity)
+
+        row_op = QHBoxLayout()
+        self.slider_opacity = QSlider(Qt.Orientation.Horizontal)
+        self.slider_opacity.setRange(20, 100)
+        curr_op = int(self.settings.get("appearance", "opacity", 0.85) * 100)
+        self.slider_opacity.setValue(curr_op)
+
+        self.lbl_op_val = QLabel(f"{curr_op}%")
+        self.lbl_op_val.setStyleSheet("font-family: Consolas, monospace; font-weight: bold; min-width: 40px;")
+
+        self.slider_opacity.valueChanged.connect(self._on_opacity_slider)
+        row_op.addWidget(self.slider_opacity)
+        row_op.addWidget(self.lbl_op_val)
+        layout.addLayout(row_op)
+
+        # Physical Calibration Note
+        layout.addSpacing(8)
+        frame_calib = QFrame()
+        frame_calib.setStyleSheet("""
+            QFrame {
+                background-color: #0F172A;
+                border: 1px solid #334155;
+                border-radius: 8px;
+                padding: 10px;
+            }
+        """)
+        calib_layout = QVBoxLayout(frame_calib)
+        lbl_calib_title = QLabel("<b>Physical Scale Calibration</b>")
+        lbl_calib_title.setStyleSheet("color: #F59E0B;")
+        lbl_calib_desc = QLabel(
+            "Measurements are automatically mapped from your display's hardware DPI.\n"
+            "Tip: Hold a standard credit card (85.6 mm wide) against the ruler to verify."
+        )
+        lbl_calib_desc.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        calib_layout.addWidget(lbl_calib_title)
+        calib_layout.addWidget(lbl_calib_desc)
+        layout.addWidget(frame_calib)
+
+        layout.addStretch()
+        self.tabs.addTab(tab, "Appearance")
+
+    def _apply_color(self, hex_val: str):
+        self.settings.set("appearance", "color", hex_val)
+        curr_op = self.slider_opacity.value() / 100.0
+        self.appearance_changed.emit(hex_val, curr_op)
+
+    def _pick_custom_color(self):
+        curr_hex = self.settings.get("appearance", "color", "#FBBF24")
+        chosen = QColorDialog.getColor(QColor(curr_hex), self, "Select Ruler Color")
+        if chosen.isValid():
+            self._apply_color(chosen.name())
+
+    def _on_opacity_slider(self, val: int):
+        self.lbl_op_val.setText(f"{val}%")
+        curr_hex = self.settings.get("appearance", "color", "#FBBF24")
+        opacity_float = val / 100.0
+        self.settings.set("appearance", "opacity", opacity_float)
+        self.appearance_changed.emit(curr_hex, opacity_float)
+
+    # -------------------------------------------------------------------------
+    # TAB 3: Shortcuts & Global Settings
+    # -------------------------------------------------------------------------
+    def _build_shortcuts_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+
+        # Header description
+        top_row = QHBoxLayout()
+        desc = QLabel("Global shortcuts work even while using other desktop applications.")
+        desc.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        top_row.addWidget(desc)
+        layout.addLayout(top_row)
+
+        # Scroll Area for all 13 shortcuts
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+
+        container = QWidget()
+        grid = QVBoxLayout(container)
+        grid.setSpacing(8)
+
+        shortcuts = [
+            ("toggle_visibility", "Show / Hide Ruler", "Win + Shift + R"),
+            ("toggle_always_on_top", "Toggle Always on Top", "Win + Shift + T"),
+            ("move_down", "Move Down 1 Line", "Win + Shift + Down"),
+            ("move_up", "Move Up 1 Line", "Win + Shift + Up"),
+            ("move_left", "Move Left 25px", "Win + Shift + Left"),
+            ("move_right", "Move Right 25px", "Win + Shift + Right"),
+            ("increase_length", "Increase Length (+30px)", "Win + Shift + Plus"),
+            ("decrease_length", "Decrease Length (-30px)", "Win + Shift + Minus"),
+            ("increase_thickness", "Increase Thickness", "Win + Alt + Up"),
+            ("decrease_thickness", "Decrease Thickness", "Win + Alt + Down"),
+            ("increase_transparency", "More Transparent", "Win + Alt + Left"),
+            ("decrease_transparency", "More Opaque", "Win + Alt + Right"),
+            ("toggle_click_through", "Toggle Click-Through", "Win + Shift + C"),
+        ]
+
+        self.record_buttons: Dict[str, KeyRecordButton] = {}
+
+        for action, label_text, default_key in shortcuts:
+            row = QFrame()
+            row.setStyleSheet("""
+                QFrame {
+                    background-color: #0F172A;
+                    border: 1px solid #334155;
+                    border-radius: 6px;
+                    padding: 6px 10px;
+                }
+            """)
+            r_layout = QHBoxLayout(row)
+            r_layout.setContentsMargins(4, 4, 4, 4)
+
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet("font-weight: 500; font-size: 12px;")
+            r_layout.addWidget(lbl)
+            r_layout.addStretch()
+
+            # Key Recorder button
+            saved_key = self.settings.get("hotkeys", action, default_key)
+            rec_btn = KeyRecordButton(saved_key)
+            rec_btn.key_recorded.connect(
+                lambda mod, vk, text, act=action: self._on_key_recorded(act, mod, vk, text)
+            )
+            self.record_buttons[action] = rec_btn
+            r_layout.addWidget(rec_btn)
+
+            grid.addWidget(row)
+
+        scroll.setWidget(container)
+        layout.addWidget(scroll)
+
+        self.tabs.addTab(tab, "Shortcuts")
+
+    def _on_key_recorded(self, action: str, mod: int, vk: int, text: str):
+        self.settings.set("hotkeys", action, text)
+        self.hotkey_rebound.emit(action, mod, vk, text)
+
+    # -------------------------------------------------------------------------
+    # Restore All Defaults
+    # -------------------------------------------------------------------------
+    def _restore_defaults(self):
+        confirm = QMessageBox.question(
+            self,
+            "Restore Defaults",
+            "Are you sure you want to restore all ruler settings and shortcuts to defaults?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.settings.data = dict(DEFAULT_SETTINGS)
+            self.settings.save()
+            self.reset_defaults_requested.emit()
+
+            # Update UI controls
+            self.cb_always_on_top.setChecked(True)
+            self.cb_guide_enable.setChecked(False)
+            self.spin_line_height.setValue(28)
+            self.slider_opacity.setValue(85)
+            self._apply_color("#FBBF24")
+
+            shortcuts_defaults = {
+                "toggle_visibility": "Win + Shift + R",
+                "toggle_always_on_top": "Win + Shift + T",
+                "move_down": "Win + Shift + Down",
+                "move_up": "Win + Shift + Up",
+                "move_left": "Win + Shift + Left",
+                "move_right": "Win + Shift + Right",
+                "increase_length": "Win + Shift + Plus",
+                "decrease_length": "Win + Shift + Minus",
+                "increase_thickness": "Win + Alt + Up",
+                "decrease_thickness": "Win + Alt + Down",
+                "increase_transparency": "Win + Alt + Left",
+                "decrease_transparency": "Win + Alt + Right",
+                "toggle_click_through": "Win + Shift + C",
+            }
+            for act, btn in self.record_buttons.items():
+                btn.set_key_text(shortcuts_defaults.get(act, "Win + Shift + R"))
