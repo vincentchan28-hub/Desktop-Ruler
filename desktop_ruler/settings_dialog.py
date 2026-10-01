@@ -444,20 +444,6 @@ class SettingsDialog(QDialog):
         self._update_logo_thumbnail()
         row_upload.addWidget(self.lbl_logo_thumb)
 
-        self.btn_upload_logo = QPushButton("📁 Upload / Choose Logo File (.png, .jpg, .svg)...")
-        self.btn_upload_logo.setStyleSheet("""
-            QPushButton {
-                background-color: #F59E0B;
-                color: #0F172A;
-                font-weight: bold;
-                border-radius: 6px;
-                padding: 6px 12px;
-                font-size: 11px;
-            }
-            QPushButton:hover { background-color: #FBBF24; }
-        """)
-        self.btn_upload_logo.clicked.connect(self._upload_logo_file)
-        row_upload.addWidget(self.btn_upload_logo)
         row_upload.addStretch()
         lf_layout.addLayout(row_upload)
 
