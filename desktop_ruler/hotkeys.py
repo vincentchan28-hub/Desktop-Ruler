@@ -62,38 +62,38 @@ HOTKEY_DEFINITIONS = [
     {
         "id": 105,
         "action": "move_up",
-        "primary": (MOD_WIN | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["UP"], "Win + Shift + Up"),
-        "fallback": (MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["UP"], "Ctrl + Alt + Shift + Up"),
+        "primary": (MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_CODES["UP"], "Ctrl + Alt + Up"),
+        "fallback": (MOD_WIN | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["UP"], "Win + Shift + Up"),
     },
     {
         "id": 106,
         "action": "move_down",
-        "primary": (MOD_WIN | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["DOWN"], "Win + Shift + Down"),
-        "fallback": (MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["DOWN"], "Ctrl + Alt + Shift + Down"),
+        "primary": (MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_CODES["DOWN"], "Ctrl + Alt + Down"),
+        "fallback": (MOD_WIN | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["DOWN"], "Win + Shift + Down"),
     },
     {
         "id": 107,
         "action": "move_left",
-        "primary": (MOD_WIN | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["LEFT"], "Win + Shift + Left"),
-        "fallback": (MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["LEFT"], "Ctrl + Alt + Shift + Left"),
+        "primary": (MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_CODES["LEFT"], "Ctrl + Alt + Left"),
+        "fallback": (MOD_WIN | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["LEFT"], "Win + Shift + Left"),
     },
     {
         "id": 108,
         "action": "move_right",
-        "primary": (MOD_WIN | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["RIGHT"], "Win + Shift + Right"),
-        "fallback": (MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["RIGHT"], "Ctrl + Alt + Shift + Right"),
+        "primary": (MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_CODES["RIGHT"], "Ctrl + Alt + Right"),
+        "fallback": (MOD_WIN | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["RIGHT"], "Win + Shift + Right"),
     },
     {
         "id": 109,
         "action": "increase_thickness",
         "primary": (MOD_WIN | MOD_ALT | MOD_NOREPEAT, VK_CODES["UP"], "Win + Alt + Up"),
-        "fallback": (MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_CODES["UP"], "Ctrl + Alt + Up"),
+        "fallback": (MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["UP"], "Ctrl + Alt + Shift + Up"),
     },
     {
         "id": 110,
         "action": "decrease_thickness",
         "primary": (MOD_WIN | MOD_ALT | MOD_NOREPEAT, VK_CODES["DOWN"], "Win + Alt + Down"),
-        "fallback": (MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_CODES["DOWN"], "Ctrl + Alt + Down"),
+        "fallback": (MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, VK_CODES["DOWN"], "Ctrl + Alt + Shift + Down"),
     },
     {
         "id": 111,
@@ -166,10 +166,8 @@ class GlobalHotkeyManager:
         if not hk_id:
             return False
 
-        # Unregister previous
         user32.UnregisterHotKey(None, hk_id)
 
-        # Register new
         success = user32.RegisterHotKey(None, hk_id, mod | MOD_NOREPEAT, vk)
         if success:
             self._id_to_action[hk_id] = action
@@ -204,7 +202,8 @@ class GlobalHotkeyManager:
                 fb_mod, fb_vk, fb_text = item["fallback"]
                 fb_success = user32.RegisterHotKey(None, hk_id, fb_mod, fb_vk)
                 if fb_success:
-                    self._id_to_action[hk_id] = action
+                    id_to_action = self._id_to_action
+                    id_to_action[hk_id] = action
                     self._registered_ids.append(hk_id)
                     msg = f"Primary '{combo_text}' conflict. Switched to fallback: {fb_text}"
                     self.signals.conflict_detected.emit(combo_text, msg)
@@ -213,7 +212,6 @@ class GlobalHotkeyManager:
                     msg = f"Shortcut '{combo_text}' unavailable. Claimed by another program."
                     self.signals.conflict_detected.emit(combo_text, msg)
 
-        # Win32 Message Loop
         msg = wintypes.MSG()
         while self._running:
             res = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)

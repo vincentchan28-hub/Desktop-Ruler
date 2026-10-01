@@ -8,12 +8,12 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "x": 200,
         "y": 200,
         "width": 600,
-        "height": 90,
+        "height": 85,
     },
     "appearance": {
-        "color": "#FBBF24",       # Amber yellow ruler color
-        "opacity": 0.85,           # 85% opacity
-        "text_color": "#1F2937",    # Dark gray markings
+        "color": "#FBBF24",
+        "opacity": 0.85,
+        "text_color": "#1F2937",
         "tick_color": "#374151",
     },
     "reading_guide": {
@@ -24,6 +24,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "behavior": {
         "always_on_top": True,
         "click_through": False,
+        "move_step": 28,  # Pixels the ruler shifts when pressing Up/Down
     },
     "hotkeys": {
         "toggle_visibility": "<win>+<shift>+r",
@@ -42,23 +43,21 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     }
 }
 
+
 class SettingsManager:
     """Handles loading and saving settings to a local JSON file."""
-    
+
     def __init__(self, filename: str = "settings.json"):
-        # Store in the same directory as the script or user profile
         base_dir = os.path.dirname(os.path.abspath(__file__))
         self.filepath = os.path.join(base_dir, filename)
         self.data: Dict[str, Any] = self.load()
 
     def load(self) -> Dict[str, Any]:
-        """Load settings from JSON, returning defaults if file is missing or invalid."""
         if not os.path.exists(self.filepath):
             return dict(DEFAULT_SETTINGS)
         try:
             with open(self.filepath, "r", encoding="utf-8") as f:
                 loaded = json.load(f)
-                # Merge with defaults to ensure missing keys exist
                 merged = dict(DEFAULT_SETTINGS)
                 for key, val in loaded.items():
                     if isinstance(val, dict) and key in merged:
@@ -71,7 +70,6 @@ class SettingsManager:
             return dict(DEFAULT_SETTINGS)
 
     def save(self) -> None:
-        """Write current settings back to JSON."""
         try:
             with open(self.filepath, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2)

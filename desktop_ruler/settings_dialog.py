@@ -1,14 +1,14 @@
 """Settings Dialog for Desktop Ruler.
 
-Provides a tabbed settings window with:
-- General Tab: Window behaviors, reading guide line spacing, reset dimensions.
+Provides a responsive, scrollable tabbed settings window with:
+- General Tab: Window behaviors, configurable line move step (for packing lists), reading guide, reset dimensions.
 - Appearance Tab: Preset colors, custom hex picker, live transparency slider, and DPI calibration.
 - Shortcuts Tab: Comprehensive global shortcut list, interactive key recording, and preset switching.
 """
 
 from typing import Optional, Dict
 from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtGui import QColor, QFont, QKeySequence
+from PySide6.QtGui import QColor, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
     QWidget,
@@ -30,7 +30,7 @@ from desktop_ruler.settings import SettingsManager, DEFAULT_SETTINGS
 
 class KeyRecordButton(QPushButton):
     """Button that listens for a key combination when clicked."""
-    key_recorded = Signal(int, int, str)  # modifiers, vk_code, key_text
+    key_recorded = Signal(int, int, str)
 
     def __init__(self, current_text: str = ""):
         super().__init__(current_text or "Record Key")
@@ -83,7 +83,6 @@ class KeyRecordButton(QPushButton):
         key = event.key()
         modifiers = event.modifiers()
 
-        # Ignore standalone modifier presses
         if key in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt, Qt.Key.Key_Meta):
             return
 
@@ -91,19 +90,18 @@ class KeyRecordButton(QPushButton):
         parts = []
 
         if modifiers & Qt.KeyboardModifier.MetaModifier:
-            mod_win32 |= 0x0008  # MOD_WIN
+            mod_win32 |= 0x0008
             parts.append("Win")
         if modifiers & Qt.KeyboardModifier.ControlModifier:
-            mod_win32 |= 0x0002  # MOD_CONTROL
+            mod_win32 |= 0x0002
             parts.append("Ctrl")
         if modifiers & Qt.KeyboardModifier.AltModifier:
-            mod_win32 |= 0x0001  # MOD_ALT
+            mod_win32 |= 0x0001
             parts.append("Alt")
         if modifiers & Qt.KeyboardModifier.ShiftModifier:
-            mod_win32 |= 0x0004  # MOD_SHIFT
+            mod_win32 |= 0x0004
             parts.append("Shift")
 
-        # Map key to virtual key code
         key_str = QKeySequence(key).toString()
         parts.append(key_str)
         combo_text = " + ".join(parts)
@@ -118,14 +116,14 @@ class KeyRecordButton(QPushButton):
 
 
 class SettingsDialog(QDialog):
-    """Tabbed dialog for managing Desktop Ruler settings."""
+    """Tabbed dialog for managing Desktop Ruler settings with scrollable content."""
 
-    # Live update signals to notify the ruler immediately
-    appearance_changed = Signal(str, float)      # (hex_color, opacity)
-    reading_guide_changed = Signal(bool, int)    # (enabled, line_height)
-    always_on_top_changed = Signal(bool)         # (enabled)
+    appearance_changed = Signal(str, float)
+    reading_guide_changed = Signal(bool, int)
+    move_step_changed = Signal(int)
+    always_on_top_changed = Signal(bool)
     reset_geometry_requested = Signal()
-    hotkey_rebound = Signal(str, int, int, str)  # (action, mod, vk, text)
+    hotkey_rebound = Signal(str, int, int, str)
     reset_defaults_requested = Signal()
 
     def __init__(self, parent=None, settings_manager: Optional[SettingsManager] = None):
@@ -133,10 +131,10 @@ class SettingsDialog(QDialog):
         self.settings = settings_manager or SettingsManager()
 
         self.setWindowTitle("Desktop Ruler Settings")
-        self.resize(540, 520)
-        self.setMinimumSize(QSize(480, 460))
+        self.resize(480, 420)
+        self.setMinimumSize(QSize(360, 300))
+        self.setSizeGripEnabled(True)
 
-        # Modern Dark Slate Theme styling
         self.setStyleSheet("""
             QDialog {
                 background-color: #0F172A;
@@ -152,13 +150,13 @@ class SettingsDialog(QDialog):
             QTabBar::tab {
                 background-color: #0F172A;
                 color: #94A3B8;
-                padding: 8px 18px;
-                margin-right: 4px;
+                padding: 7px 14px;
+                margin-right: 3px;
                 border-top-left-radius: 6px;
                 border-top-right-radius: 6px;
                 border: 1px solid #1E293B;
                 font-weight: 600;
-                font-size: 12px;
+                font-size: 11px;
             }
             QTabBar::tab:selected {
                 background-color: #1E293B;
@@ -214,55 +212,43 @@ class SettingsDialog(QDialog):
                 border-radius: 4px;
                 padding: 4px 8px;
             }
-            QPushButton.action-btn {
-                background-color: #334155;
-                color: #F8FAFC;
-                border: 1px solid #475569;
-                border-radius: 6px;
-                padding: 6px 14px;
-                font-weight: 600;
-                font-size: 12px;
-            }
-            QPushButton.action-btn:hover {
-                background-color: #475569;
-                border-color: #F59E0B;
-            }
-            QPushButton.primary-btn {
-                background-color: #F59E0B;
-                color: #0F172A;
-                border: none;
-                border-radius: 6px;
-                padding: 6px 16px;
-                font-weight: bold;
-                font-size: 12px;
-            }
-            QPushButton.primary-btn:hover {
-                background-color: #FBBF24;
-            }
             QScrollArea {
                 border: none;
                 background-color: transparent;
             }
+            QScrollBar:vertical {
+                background: #0F172A;
+                width: 8px;
+                margin: 0px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background: #475569;
+                min-height: 20px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #F59E0B;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
         """)
 
-        # Main Layout
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(16, 16, 16, 16)
-        main_layout.setSpacing(14)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(10)
 
-        # Tab Widget
         self.tabs = QTabWidget(self)
         main_layout.addWidget(self.tabs)
 
-        # Build individual tabs
         self._build_general_tab()
         self._build_appearance_tab()
         self._build_shortcuts_tab()
 
-        # Bottom Bar: Restore Defaults + Close
+        # Bottom Bar: Always pinned and fully visible
         bottom_bar = QHBoxLayout()
         self.btn_restore = QPushButton("Restore All Defaults", self)
-        self.btn_restore.setProperty("class", "action-btn")
         self.btn_restore.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
@@ -270,7 +256,7 @@ class SettingsDialog(QDialog):
                 border: 1px solid #7F1D1D;
                 border-radius: 6px;
                 padding: 6px 14px;
-                font-size: 12px;
+                font-size: 11px;
             }
             QPushButton:hover {
                 background-color: #450A0A;
@@ -283,25 +269,57 @@ class SettingsDialog(QDialog):
         bottom_bar.addStretch()
 
         self.btn_close = QPushButton("Close", self)
-        self.btn_close.setProperty("class", "primary-btn")
+        self.btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: #F59E0B;
+                color: #0F172A;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 18px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover { background-color: #FBBF24; }
+        """)
         self.btn_close.clicked.connect(self.accept)
         bottom_bar.addWidget(self.btn_close)
 
         main_layout.addLayout(bottom_bar)
 
-    # -------------------------------------------------------------------------
-    # TAB 1: General Settings
-    # -------------------------------------------------------------------------
     def _build_general_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
 
-        # Section 1: Window Behavior
-        lbl_sec1 = QLabel("<b>Window Behavior</b>")
-        lbl_sec1.setStyleSheet("color: #F59E0B; font-size: 13px;")
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(14)
+
+        # Section 1: Line Movement Step (Packing List & Reading)
+        lbl_sec1 = QLabel("<b>Vertical Move Step (Packing List)</b>")
+        lbl_sec1.setStyleSheet("color: #F59E0B; font-size: 12px;")
         layout.addWidget(lbl_sec1)
+
+        desc_step = QLabel("Distance the entire ruler shifts up or down per key press:")
+        desc_step.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        layout.addWidget(desc_step)
+
+        row_step = QHBoxLayout()
+        self.spin_move_step = QSpinBox()
+        self.spin_move_step.setRange(5, 200)
+        self.spin_move_step.setSuffix(" px per step")
+        current_step = int(self.settings.get("behavior", "move_step", 28))
+        self.spin_move_step.setValue(current_step)
+        self.spin_move_step.valueChanged.connect(self._on_move_step_changed)
+        row_step.addWidget(self.spin_move_step)
+        row_step.addStretch()
+        layout.addLayout(row_step)
+
+        # Section 2: Window Behavior
+        layout.addSpacing(6)
+        lbl_sec2 = QLabel("<b>Window Behavior</b>")
+        lbl_sec2.setStyleSheet("color: #F59E0B; font-size: 12px;")
+        layout.addWidget(lbl_sec2)
 
         self.cb_always_on_top = QCheckBox("Keep Ruler Always on Top of other windows")
         is_top = self.settings.get("behavior", "always_on_top", True)
@@ -309,11 +327,11 @@ class SettingsDialog(QDialog):
         self.cb_always_on_top.toggled.connect(self._on_always_on_top_toggled)
         layout.addWidget(self.cb_always_on_top)
 
-        # Section 2: Reading Guide Mode
-        layout.addSpacing(8)
-        lbl_sec2 = QLabel("<b>Reading Guide Mode</b>")
-        lbl_sec2.setStyleSheet("color: #F59E0B; font-size: 13px;")
-        layout.addWidget(lbl_sec2)
+        # Section 3: Reading Guide Mode
+        layout.addSpacing(6)
+        lbl_sec3 = QLabel("<b>Reading Guide Mode</b>")
+        lbl_sec3.setStyleSheet("color: #F59E0B; font-size: 12px;")
+        layout.addWidget(lbl_sec3)
 
         self.cb_guide_enable = QCheckBox("Enable Reading Guide (dims surrounding document text)")
         guide_cfg = self.settings.data.get("reading_guide", {})
@@ -322,7 +340,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.cb_guide_enable)
 
         row_line = QHBoxLayout()
-        row_line.addWidget(QLabel("Reading Line Height (Spacing):"))
+        row_line.addWidget(QLabel("Reading Slot Height:"))
         self.spin_line_height = QSpinBox()
         self.spin_line_height.setRange(16, 120)
         self.spin_line_height.setSuffix(" px")
@@ -332,11 +350,11 @@ class SettingsDialog(QDialog):
         row_line.addStretch()
         layout.addLayout(row_line)
 
-        # Section 3: Window Dimensions Reset
-        layout.addSpacing(8)
-        lbl_sec3 = QLabel("<b>Ruler Size & Position</b>")
-        lbl_sec3.setStyleSheet("color: #F59E0B; font-size: 13px;")
-        layout.addWidget(lbl_sec3)
+        # Section 4: Window Dimensions Reset
+        layout.addSpacing(6)
+        lbl_sec4 = QLabel("<b>Ruler Size & Position</b>")
+        lbl_sec4.setStyleSheet("color: #F59E0B; font-size: 12px;")
+        layout.addWidget(lbl_sec4)
 
         row_reset = QHBoxLayout()
         btn_reset_geo = QPushButton("Reset Ruler to Default Size (600×85 px)")
@@ -347,6 +365,7 @@ class SettingsDialog(QDialog):
                 border: 1px solid #475569;
                 border-radius: 6px;
                 padding: 6px 12px;
+                font-size: 11px;
             }
             QPushButton:hover { background-color: #475569; }
         """)
@@ -356,7 +375,12 @@ class SettingsDialog(QDialog):
         layout.addLayout(row_reset)
 
         layout.addStretch()
-        self.tabs.addTab(tab, "General")
+        scroll.setWidget(content)
+        self.tabs.addTab(scroll, "General")
+
+    def _on_move_step_changed(self, step: int):
+        self.settings.set("behavior", "move_step", step)
+        self.move_step_changed.emit(step)
 
     def _on_always_on_top_toggled(self, checked: bool):
         self.settings.set("behavior", "always_on_top", checked)
@@ -369,18 +393,17 @@ class SettingsDialog(QDialog):
         self.settings.set("reading_guide", "line_height", height)
         self.reading_guide_changed.emit(enabled, height)
 
-    # -------------------------------------------------------------------------
-    # TAB 2: Appearance & Physical Scale
-    # -------------------------------------------------------------------------
     def _build_appearance_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
 
-        # Color Presets
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(14)
+
         lbl_color = QLabel("<b>Ruler Color Scheme</b>")
-        lbl_color.setStyleSheet("color: #F59E0B; font-size: 13px;")
+        lbl_color.setStyleSheet("color: #F59E0B; font-size: 12px;")
         layout.addWidget(lbl_color)
 
         palette_row = QHBoxLayout()
@@ -403,7 +426,8 @@ class SettingsDialog(QDialog):
                     font-weight: bold;
                     border: 2px solid {"#FFFFFF" if hex_val == current_hex else "#334155"};
                     border-radius: 6px;
-                    padding: 6px 12px;
+                    padding: 5px 10px;
+                    font-size: 11px;
                 }}
             """)
             btn.clicked.connect(lambda ch, h=hex_val: self._apply_color(h))
@@ -411,7 +435,6 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(palette_row)
 
-        # Custom Color Picker button
         btn_custom = QPushButton("Pick Custom Color...")
         btn_custom.setStyleSheet("""
             QPushButton {
@@ -420,16 +443,16 @@ class SettingsDialog(QDialog):
                 border: 1px solid #475569;
                 border-radius: 6px;
                 padding: 6px 12px;
+                font-size: 11px;
             }
             QPushButton:hover { background-color: #475569; }
         """)
         btn_custom.clicked.connect(self._pick_custom_color)
         layout.addWidget(btn_custom)
 
-        # Opacity Slider
-        layout.addSpacing(8)
+        layout.addSpacing(6)
         lbl_opacity = QLabel("<b>Transparency (Opacity)</b>")
-        lbl_opacity.setStyleSheet("color: #F59E0B; font-size: 13px;")
+        lbl_opacity.setStyleSheet("color: #F59E0B; font-size: 12px;")
         layout.addWidget(lbl_opacity)
 
         row_op = QHBoxLayout()
@@ -446,8 +469,7 @@ class SettingsDialog(QDialog):
         row_op.addWidget(self.lbl_op_val)
         layout.addLayout(row_op)
 
-        # Physical Calibration Note
-        layout.addSpacing(8)
+        layout.addSpacing(6)
         frame_calib = QFrame()
         frame_calib.setStyleSheet("""
             QFrame {
@@ -459,18 +481,19 @@ class SettingsDialog(QDialog):
         """)
         calib_layout = QVBoxLayout(frame_calib)
         lbl_calib_title = QLabel("<b>Physical Scale Calibration</b>")
-        lbl_calib_title.setStyleSheet("color: #F59E0B;")
+        lbl_calib_title.setStyleSheet("color: #F59E0B; font-size: 11px;")
         lbl_calib_desc = QLabel(
-            "Measurements are automatically mapped from your display's hardware DPI.\n"
-            "Tip: Hold a standard credit card (85.6 mm wide) against the ruler to verify."
+            "Measurements automatically map from hardware display DPI.\n"
+            "Tip: Compare against a real credit card (85.6 mm wide)."
         )
-        lbl_calib_desc.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        lbl_calib_desc.setStyleSheet("color: #94A3B8; font-size: 10px;")
         calib_layout.addWidget(lbl_calib_title)
         calib_layout.addWidget(lbl_calib_desc)
         layout.addWidget(frame_calib)
 
         layout.addStretch()
-        self.tabs.addTab(tab, "Appearance")
+        scroll.setWidget(content)
+        self.tabs.addTab(scroll, "Appearance")
 
     def _apply_color(self, hex_val: str):
         self.settings.set("appearance", "color", hex_val)
@@ -490,35 +513,24 @@ class SettingsDialog(QDialog):
         self.settings.set("appearance", "opacity", opacity_float)
         self.appearance_changed.emit(curr_hex, opacity_float)
 
-    # -------------------------------------------------------------------------
-    # TAB 3: Shortcuts & Global Settings
-    # -------------------------------------------------------------------------
     def _build_shortcuts_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(10)
-
-        # Header description
-        top_row = QHBoxLayout()
-        desc = QLabel("Global shortcuts work even while using other desktop applications.")
-        desc.setStyleSheet("color: #94A3B8; font-size: 11px;")
-        top_row.addWidget(desc)
-        layout.addLayout(top_row)
-
-        # Scroll Area for all 13 shortcuts
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
 
-        container = QWidget()
-        grid = QVBoxLayout(container)
-        grid.setSpacing(8)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(8)
+
+        desc = QLabel("Global shortcuts work while any document or spreadsheet is active.")
+        desc.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        layout.addWidget(desc)
 
         shortcuts = [
+            ("move_down", "Move Entire Ruler Down 1 Line", "Win + Shift + Down"),
+            ("move_up", "Move Entire Ruler Up 1 Line", "Win + Shift + Up"),
             ("toggle_visibility", "Show / Hide Ruler", "Win + Shift + R"),
             ("toggle_always_on_top", "Toggle Always on Top", "Win + Shift + T"),
-            ("move_down", "Move Down 1 Line", "Win + Shift + Down"),
-            ("move_up", "Move Up 1 Line", "Win + Shift + Up"),
             ("move_left", "Move Left 25px", "Win + Shift + Left"),
             ("move_right", "Move Right 25px", "Win + Shift + Right"),
             ("increase_length", "Increase Length (+30px)", "Win + Shift + Plus"),
@@ -539,18 +551,17 @@ class SettingsDialog(QDialog):
                     background-color: #0F172A;
                     border: 1px solid #334155;
                     border-radius: 6px;
-                    padding: 6px 10px;
+                    padding: 5px 8px;
                 }
             """)
             r_layout = QHBoxLayout(row)
             r_layout.setContentsMargins(4, 4, 4, 4)
 
             lbl = QLabel(label_text)
-            lbl.setStyleSheet("font-weight: 500; font-size: 12px;")
+            lbl.setStyleSheet("font-weight: 500; font-size: 11px;")
             r_layout.addWidget(lbl)
             r_layout.addStretch()
 
-            # Key Recorder button
             saved_key = self.settings.get("hotkeys", action, default_key)
             rec_btn = KeyRecordButton(saved_key)
             rec_btn.key_recorded.connect(
@@ -559,20 +570,16 @@ class SettingsDialog(QDialog):
             self.record_buttons[action] = rec_btn
             r_layout.addWidget(rec_btn)
 
-            grid.addWidget(row)
+            layout.addWidget(row)
 
-        scroll.setWidget(container)
-        layout.addWidget(scroll)
-
-        self.tabs.addTab(tab, "Shortcuts")
+        layout.addStretch()
+        scroll.setWidget(content)
+        self.tabs.addTab(scroll, "Shortcuts")
 
     def _on_key_recorded(self, action: str, mod: int, vk: int, text: str):
         self.settings.set("hotkeys", action, text)
         self.hotkey_rebound.emit(action, mod, vk, text)
 
-    # -------------------------------------------------------------------------
-    # Restore All Defaults
-    # -------------------------------------------------------------------------
     def _restore_defaults(self):
         confirm = QMessageBox.question(
             self,
@@ -585,7 +592,7 @@ class SettingsDialog(QDialog):
             self.settings.save()
             self.reset_defaults_requested.emit()
 
-            # Update UI controls
+            self.spin_move_step.setValue(28)
             self.cb_always_on_top.setChecked(True)
             self.cb_guide_enable.setChecked(False)
             self.spin_line_height.setValue(28)
@@ -593,10 +600,10 @@ class SettingsDialog(QDialog):
             self._apply_color("#FBBF24")
 
             shortcuts_defaults = {
-                "toggle_visibility": "Win + Shift + R",
-                "toggle_always_on_top": "Win + Shift + T",
                 "move_down": "Win + Shift + Down",
                 "move_up": "Win + Shift + Up",
+                "toggle_visibility": "Win + Shift + R",
+                "toggle_always_on_top": "Win + Shift + T",
                 "move_left": "Win + Shift + Left",
                 "move_right": "Win + Shift + Right",
                 "increase_length": "Win + Shift + Plus",

@@ -2,6 +2,7 @@
 
 Provides a frameless, floating, semi-transparent ruler with physical mm/cm markings,
 mouse dragging, resize handles, reading guide mode, toast alerts, click-through mode,
+configurable whole-ruler vertical movement (for packing lists & documents),
 and integration with the dedicated tabbed Settings Dialog.
 """
 
@@ -22,14 +23,13 @@ from PySide6.QtWidgets import (
     QWidget,
     QMenu,
     QApplication,
-    QColorDialog,
 )
 from desktop_ruler.settings import SettingsManager
 from desktop_ruler.settings_dialog import SettingsDialog
 
 
 class DesktopRuler(QWidget):
-    """Frameless, floating, draggable on-screen ruler with hotkey & settings support."""
+    """Frameless, floating, draggable on-screen ruler with settings support."""
 
     RESIZE_MARGIN = 14
 
@@ -67,13 +67,15 @@ class DesktopRuler(QWidget):
         self.reading_guide_enabled = guide_cfg.get("enabled", False)
         self.line_height = int(guide_cfg.get("line_height", 28))
 
+        # Vertical movement step per line (configurable in settings for packing lists)
+        self.move_step = int(self.settings.get("behavior", "move_step", 28))
+
         self._dragging = False
         self._resizing = False
         self._drag_start_pos = QPoint()
         self._start_geometry = QRect()
         self._click_through_active = False
 
-        # On-screen Toast Notification System
         self._toast_message: str = ""
         self._toast_is_error: bool = False
         self._toast_timer = QTimer(self)
@@ -81,10 +83,14 @@ class DesktopRuler(QWidget):
         self._toast_timer.timeout.connect(self._clear_toast)
 
     def set_hotkey_manager(self, manager) -> None:
-        """Attach the hotkey manager for runtime re-binding from settings."""
         self.hotkey_manager = manager
 
-    def show_toast(self, message: str, is_error: bool = False, duration_ms: int = 3500) -> None:
+    def set_move_step(self, step: int) -> None:
+        self.move_step = max(5, step)
+        self.settings.set("behavior", "move_step", self.move_step)
+        self.show_toast(f"Move Step: {self.move_step}px per line")
+
+    def show_toast(self, message: str, is_error: bool = False, duration_ms: int = 2500) -> None:
         self._toast_message = message
         self._toast_is_error = is_error
         self.update()
@@ -103,7 +109,11 @@ class DesktopRuler(QWidget):
 
     def handle_global_action(self, action: str) -> None:
         """Respond to global shortcuts triggered by the background thread."""
-        if action == "toggle_visibility":
+        if action == "move_down":
+            self.move_relative(0, self.move_step)
+        elif action == "move_up":
+            self.move_relative(0, -self.move_step)
+        elif action == "toggle_visibility":
             self.toggle_visibility()
         elif action == "toggle_always_on_top":
             self.toggle_always_on_top()
@@ -111,10 +121,6 @@ class DesktopRuler(QWidget):
             self.adjust_length(30)
         elif action == "decrease_length":
             self.adjust_length(-30)
-        elif action == "move_up":
-            self.move_relative(0, -self.line_height)
-        elif action == "move_down":
-            self.move_relative(0, self.line_height)
         elif action == "move_left":
             self.move_relative(-25, 0)
         elif action == "move_right":
@@ -138,23 +144,34 @@ class DesktopRuler(QWidget):
             self.raise_()
             self.activateWindow()
 
+    def move_relative(self, dx: int, dy: int) -> None:
+        """Move the entire ruler position on screen."""
+        new_x = self.x() + dx
+        new_y = self.y() + dy
+        # Explicit setGeometry ensures Windows updates coordinates on frameless windows
+        self.setGeometry(new_x, new_y, self.width(), self.height())
+        self._save_geometry()
+
+        if dy > 0:
+            self.show_toast(f"▼ Moved Down {dy}px")
+        elif dy < 0:
+            self.show_toast(f"▲ Moved Up {abs(dy)}px")
+        elif dx != 0:
+            self.show_toast(f"Moved {'Right' if dx > 0 else 'Left'} {abs(dx)}px")
+
     def adjust_length(self, delta: int) -> None:
         new_w = max(self.minimumWidth(), min(2500, self.width() + delta))
-        self.resize(new_w, self.height())
+        self.setGeometry(self.x(), self.y(), new_w, self.height())
         self._save_geometry()
         self.update()
-        self.show_toast(f"Length: {self.width()}px ({(self.width()/self.pixels_per_millimeter()/10):.1f} cm)")
+        self.show_toast(f"Length: {self.width()}px")
 
     def adjust_thickness(self, delta: int) -> None:
         new_h = max(self.minimumHeight(), min(600, self.height() + delta))
-        self.resize(self.width(), new_h)
+        self.setGeometry(self.x(), self.y(), self.width(), new_h)
         self._save_geometry()
         self.update()
         self.show_toast(f"Thickness: {self.height()}px")
-
-    def move_relative(self, dx: int, dy: int) -> None:
-        self.move(self.x() + dx, self.y() + dy)
-        self._save_geometry()
 
     def adjust_opacity(self, delta: float) -> None:
         self.opacity = max(0.20, min(1.0, self.opacity + delta))
@@ -192,9 +209,12 @@ class DesktopRuler(QWidget):
             self._settings_dialog = SettingsDialog(parent=None, settings_manager=self.settings)
             self._settings_dialog.appearance_changed.connect(self._on_appearance_changed)
             self._settings_dialog.reading_guide_changed.connect(self._on_guide_changed)
+            self._settings_dialog.move_step_changed.connect(self.set_move_step)
             self._settings_dialog.always_on_top_changed.connect(self._on_always_on_top_changed)
             self._settings_dialog.reset_geometry_requested.connect(self.reset_default_size)
             self._settings_dialog.reset_defaults_requested.connect(self._on_defaults_restored)
+            if self.hotkey_manager:
+                self._settings_dialog.hotkey_rebound.connect(self.hotkey_manager.rebind_hotkey)
 
         self._settings_dialog.show()
         self._settings_dialog.raise_()
@@ -224,6 +244,7 @@ class DesktopRuler(QWidget):
         self.opacity = 0.85
         self.reading_guide_enabled = False
         self.line_height = 28
+        self.move_step = 28
         self._update_text_contrast()
         self.show_toast("All settings restored to defaults")
         self.update()
@@ -245,7 +266,6 @@ class DesktopRuler(QWidget):
         w = self.width()
         h = self.height()
 
-        # Background
         bg_color = QColor(self.ruler_color)
         bg_color.setAlphaF(self.opacity)
         painter.setBrush(bg_color)
@@ -256,7 +276,6 @@ class DesktopRuler(QWidget):
         painter.setPen(border_pen)
         painter.drawRoundedRect(0, 0, w - 1, h - 1, 6, 6)
 
-        # Reading Guide
         if self.reading_guide_enabled:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(0, 0, 0, 75))
@@ -271,7 +290,6 @@ class DesktopRuler(QWidget):
             painter.drawLine(4, guide_y, w - 4, guide_y)
             painter.drawLine(4, bottom_y, w - 4, bottom_y)
 
-        # Ticks and Centimetre Numbers
         px_per_mm = self.pixels_per_millimeter()
         origin_x = 16.0
         max_x = float(w - 20)
@@ -318,7 +336,6 @@ class DesktopRuler(QWidget):
 
             mm_idx += 1
 
-        # Resize grip dots
         painter.setPen(Qt.PenStyle.NoPen)
         grip_color = QColor(self.tick_color)
         grip_color.setAlpha(130)
@@ -328,7 +345,6 @@ class DesktopRuler(QWidget):
         for offset in (-8, 0, 8):
             painter.drawEllipse(grip_x, mid_y + offset, 3, 3)
 
-        # On-Screen Toast Notification
         if self._toast_message:
             font_toast = QFont("Segoe UI", 8)
             font_toast.setBold(True)
@@ -372,11 +388,11 @@ class DesktopRuler(QWidget):
         if self._resizing:
             delta_x = event.globalPosition().toPoint().x() - self._drag_start_pos.x()
             new_width = max(self.minimumWidth(), self._start_geometry.width() + delta_x)
-            self.resize(new_width, self.height())
+            self.setGeometry(self.x(), self.y(), new_width, self.height())
             self._save_geometry()
         elif self._dragging:
             new_pos = event.globalPosition().toPoint() - self._drag_start_pos
-            self.move(new_pos)
+            self.setGeometry(new_pos.x(), new_pos.y(), self.width(), self.height())
             self._save_geometry()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -392,18 +408,34 @@ class DesktopRuler(QWidget):
         self.settings.set("window", "height", self.height())
 
     def keyPressEvent(self, event) -> None:
+        """Handle keyboard actions when ruler is active.
+        
+        Down / Up arrows or J / K: Move the whole ruler up or down by move_step.
+        Left / Right arrows: Move ruler left or right.
+        Alt + Up / Down: Adjust thickness.
+        + / -: Adjust length.
+        """
         key = event.key()
         modifiers = event.modifiers()
-        step = 10 if modifiers & Qt.KeyboardModifier.ShiftModifier else 2
 
-        if key == Qt.Key.Key_Right:
-            self.resize(self.width() + step, self.height())
-        elif key == Qt.Key.Key_Left:
-            self.resize(max(self.minimumWidth(), self.width() - step), self.height())
-        elif key == Qt.Key.Key_Down:
-            self.resize(self.width(), self.height() + step)
-        elif key == Qt.Key.Key_Up:
-            self.resize(self.width(), max(self.minimumHeight(), self.height() - step))
+        # Alt modifier: adjust thickness
+        if modifiers & Qt.KeyboardModifier.AltModifier:
+            if key == Qt.Key.Key_Up:
+                self.adjust_thickness(5)
+                return
+            elif key == Qt.Key.Key_Down:
+                self.adjust_thickness(-5)
+                return
+
+        # Up and Down: MOVE the ENTIRE ruler vertically (packing list navigation)
+        if key in (Qt.Key.Key_Down, Qt.Key.Key_J):
+            self.move_relative(0, self.move_step)
+        elif key in (Qt.Key.Key_Up, Qt.Key.Key_K):
+            self.move_relative(0, -self.move_step)
+        elif key in (Qt.Key.Key_Right, Qt.Key.Key_L):
+            self.move_relative(20, 0)
+        elif key in (Qt.Key.Key_Left, Qt.Key.Key_H):
+            self.move_relative(-20, 0)
         elif key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
             self.adjust_length(20)
         elif key in (Qt.Key.Key_Minus, Qt.Key.Key_Underscore):
@@ -424,13 +456,22 @@ class DesktopRuler(QWidget):
     def _show_context_menu(self, global_pos: QPoint) -> None:
         menu = QMenu(self)
 
-        # 1. Open dedicated Settings Dialog
         settings_act = QAction("⚙ Settings (Preferences & Hotkeys)...", self)
         font = settings_act.font()
         font.setBold(True)
         settings_act.setFont(font)
         settings_act.triggered.connect(self.open_settings_dialog)
         menu.addAction(settings_act)
+
+        menu.addSeparator()
+
+        down_act = QAction(f"▼ Move Down 1 Line ({self.move_step}px)", self)
+        down_act.triggered.connect(lambda: self.move_relative(0, self.move_step))
+        menu.addAction(down_act)
+
+        up_act = QAction(f"▲ Move Up 1 Line ({self.move_step}px)", self)
+        up_act.triggered.connect(lambda: self.move_relative(0, -self.move_step))
+        menu.addAction(up_act)
 
         menu.addSeparator()
 
@@ -483,7 +524,7 @@ class DesktopRuler(QWidget):
         self.show()
 
     def reset_default_size(self) -> None:
-        self.resize(600, 85)
+        self.setGeometry(self.x(), self.y(), 600, 85)
         self._save_geometry()
         self.update()
         self.show_toast("Reset to 600×85 px")

@@ -32,15 +32,16 @@ import {
   Plus,
   Minus,
   Sliders,
-  X
+  X,
+  ListOrdered
 } from 'lucide-react';
 
 const CODE_FILES: Record<string, { path: string; language: string; content: string; description: string }> = {
   'settings_dialog.py': {
     path: 'desktop_ruler/settings_dialog.py',
     language: 'python',
-    description: 'Dedicated tabbed Settings Dialog with General, Appearance, and Shortcuts tabs, KeyRecordButton, and live sync.',
-    content: `"""Settings Dialog for Desktop Ruler with Tabbed Navigation & Key Recorder."""
+    description: 'Scrollable tabbed Settings Dialog with General, Appearance, Shortcuts, Move Step control, and Key Recorder.',
+    content: `"""Settings Dialog for Desktop Ruler with Scrollable Tabs & Move Step."""
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
@@ -48,108 +49,48 @@ from PySide6.QtWidgets import (
 )
 from desktop_ruler.settings import SettingsManager, DEFAULT_SETTINGS
 
-class KeyRecordButton(QPushButton):
-    key_recorded = Signal(int, int, str)
-    def __init__(self, current_text=""):
-        super().__init__(current_text or "Record Key")
-        self.setCheckable(True)
-        self.clicked.connect(self._toggle_recording)
-
-    def keyPressEvent(self, event):
-        # Captures modifiers and native virtual keys, then emits key_recorded
-        pass
-
 class SettingsDialog(QDialog):
-    appearance_changed = Signal(str, float)
-    reading_guide_changed = Signal(bool, int)
-    always_on_top_changed = Signal(bool)
-    reset_geometry_requested = Signal()
-    reset_defaults_requested = Signal()
-
-    def __init__(self, parent=None, settings_manager=None):
-        super().__init__(parent)
-        self.setWindowTitle("Desktop Ruler Settings")
-        self.tabs = QTabWidget(self)
-        self._build_general_tab()
-        self._build_appearance_tab()
-        self._build_shortcuts_tab()`
-  },
-  'hotkeys.py': {
-    path: 'desktop_ruler/hotkeys.py',
-    language: 'python',
-    description: 'Win32 RegisterHotKey manager with dynamic runtime rebind_hotkey support and conflict alerts.',
-    content: `"""Windows Native Global Hotkeys Manager using ctypes (RegisterHotKey)."""
-import sys, threading
-from typing import Dict, List, Optional
-from PySide6.QtCore import QObject, Signal
-
-class GlobalHotkeyManager:
-    def __init__(self):
-        self.signals = HotkeySignals()
-        self.is_windows = sys.platform == "win32"
-    def rebind_hotkey(self, action: str, mod: int, vk: int, combo_text: str) -> bool:
-        # Unregisters old ID and registers new user shortcut
-        pass`
+    move_step_changed = Signal(int)
+    # Scrollable tabs ensure settings never cut off on any screen size`
   },
   'ruler_window.py': {
     path: 'desktop_ruler/ruler_window.py',
     language: 'python',
-    description: 'Frameless window, QPainter cm/mm markings, toast notifications, right-click Settings... launcher.',
+    description: 'Ruler window. Fixes Up/Down to shift the whole ruler by move_step (for packing lists) and not resize height.',
     content: `"""Ruler Window implementation using PySide6 (Qt)."""
+from PySide6.QtCore import Qt, QPoint, QRect, QSize, QTimer
 from PySide6.QtWidgets import QWidget, QMenu
 from desktop_ruler.settings_dialog import SettingsDialog
 
 class DesktopRuler(QWidget):
-    def open_settings_dialog(self):
-        if self._settings_dialog is None:
-            self._settings_dialog = SettingsDialog(parent=None, settings_manager=self.settings)
-            self._settings_dialog.appearance_changed.connect(self._on_appearance_changed)
-            self._settings_dialog.reading_guide_changed.connect(self._on_guide_changed)
-            self._settings_dialog.always_on_top_changed.connect(self._on_always_on_top_changed)
-            self._settings_dialog.reset_geometry_requested.connect(self.reset_default_size)
-            self._settings_dialog.reset_defaults_requested.connect(self._on_defaults_restored)
-        self._settings_dialog.show()
-        self._settings_dialog.raise_()
-        self._settings_dialog.activateWindow()`
+    def move_relative(self, dx: int, dy: int):
+        new_x = self.x() + dx
+        new_y = self.y() + dy
+        self.setGeometry(new_x, new_y, self.width(), self.height())
+        self._save_geometry()
+        if dy > 0: self.show_toast(f"▼ Moved Down {dy}px")
+        elif dy < 0: self.show_toast(f"▲ Moved Up {abs(dy)}px")`
   },
-  'main.py': {
-    path: 'desktop_ruler/main.py',
+  'hotkeys.py': {
+    path: 'desktop_ruler/hotkeys.py',
     language: 'python',
-    description: 'Entry point. Sets up High-DPI Qt application, ruler window, and attaches hotkey manager to ruler.',
-    content: `"""Desktop Ruler Entry Point."""
-import sys, os
-from PySide6.QtWidgets import QApplication
-from desktop_ruler.settings import SettingsManager
-from desktop_ruler.ruler_window import DesktopRuler
-from desktop_ruler.hotkeys import GlobalHotkeyManager
-
-def main():
-    app = QApplication(sys.argv)
-    settings = SettingsManager()
-    ruler = DesktopRuler(settings_manager=settings)
-    ruler.show()
-
-    hotkey_mgr = GlobalHotkeyManager()
-    hotkey_mgr.signals.triggered.connect(ruler.handle_global_action)
-    hotkey_mgr.start()
-    ruler.set_hotkey_manager(hotkey_mgr)
-
-    app.aboutToQuit.connect(hotkey_mgr.stop)
-    sys.exit(app.exec())`
+    description: 'Win32 RegisterHotKey manager with Ctrl+Alt+Down/Up (avoids Windows 11 snap conflicts).',
+    content: `"""Windows Native Global Hotkeys Manager using ctypes (RegisterHotKey)."""
+# Primary hotkeys mapped to Ctrl+Alt+Down and Ctrl+Alt+Up to avoid Windows 11 Snap interference`
   },
   'settings.py': {
     path: 'desktop_ruler/settings.py',
     language: 'python',
-    description: 'JSON settings manager with defaults and local storage.',
-    content: `"""Settings management for Desktop Ruler."""
-import json, os
-
-DEFAULT_SETTINGS = {
-    "window": {"x": 200, "y": 200, "width": 600, "height": 85},
-    "appearance": {"color": "#FBBF24", "opacity": 0.85, "text_color": "#1F2937", "tick_color": "#374151"},
-    "reading_guide": {"enabled": False, "line_height": 28},
-    "behavior": {"always_on_top": True, "click_through": False}
+    description: 'JSON settings manager with move_step support.',
+    content: `DEFAULT_SETTINGS = {
+    "behavior": {"always_on_top": True, "click_through": False, "move_step": 28}
 }`
+  },
+  'main.py': {
+    path: 'desktop_ruler/main.py',
+    language: 'python',
+    description: 'Entry point. Sets up Qt application, ruler window, and attaches hotkey manager.',
+    content: `"""Desktop Ruler Entry Point."""`
   },
   'requirements.txt': {
     path: 'requirements.txt',
@@ -170,7 +111,7 @@ const COLOR_PRESETS = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'simulator' | 'code' | 'roadmap' | 'guide'>('simulator');
-  const [selectedFile, setSelectedFile] = useState<string>('settings_dialog.py');
+  const [selectedFile, setSelectedFile] = useState<string>('ruler_window.py');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Ruler Simulator State
@@ -180,6 +121,7 @@ export default function App() {
   const [opacity, setOpacity] = useState<number>(0.88);
   const [readingGuide, setReadingGuide] = useState<boolean>(false);
   const [lineSpacing, setLineSpacing] = useState<number>(28);
+  const [moveStep, setMoveStep] = useState<number>(28);
   const [guideOffset, setGuideOffset] = useState<number>(28);
   const [dpiScale, setDpiScale] = useState<number>(96);
   const [position, setPosition] = useState<{ x: number; y: number }>({ x: 40, y: 120 });
@@ -196,12 +138,12 @@ export default function App() {
 
   // Shortcut key bindings state in simulator
   const [shortcutsMap, setShortcutsMap] = useState<Record<string, string>>({
+    move_down: 'Ctrl + Alt + Down',
+    move_up: 'Ctrl + Alt + Up',
     toggle_visibility: 'Win + Shift + R',
     toggle_always_on_top: 'Win + Shift + T',
-    move_down: 'Win + Shift + Down',
-    move_up: 'Win + Shift + Up',
-    move_left: 'Win + Shift + Left',
-    move_right: 'Win + Shift + Right',
+    move_left: 'Ctrl + Alt + Left',
+    move_right: 'Ctrl + Alt + Right',
     increase_length: 'Win + Shift + Plus',
     decrease_length: 'Win + Shift + Minus',
     increase_thickness: 'Win + Alt + Up',
@@ -220,7 +162,7 @@ export default function App() {
     setToastIsError(isErr);
     setTimeout(() => {
       setToastMessage((prev) => (prev === msg ? null : prev));
-    }, 3200);
+    }, 2800);
   };
 
   const dragRef = useRef<{ startX: number; startY: number; initX: number; initY: number; initW: number }>({
@@ -311,16 +253,34 @@ export default function App() {
     };
   };
 
-  const handleSimulatedAction = (action: string, shortcutText: string) => {
-    if (action === 'toggle_visibility') {
-      setIsVisible(!isVisible);
-      triggerToast(isVisible ? 'Ruler Hidden (Win+Shift+R to restore)' : 'Ruler Restored');
-    } else if (action === 'move_down') {
-      setPosition((p) => ({ ...p, y: p.y + lineSpacing }));
-      triggerToast(`Moved down 1 line (+${lineSpacing}px)`);
+  // Keyboard navigation when focus is in window
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isSettingsOpen) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setPosition((p) => ({ ...p, y: p.y + moveStep }));
+        triggerToast(`▼ Moved Down ${moveStep}px`);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setPosition((p) => ({ ...p, y: Math.max(10, p.y - moveStep) }));
+        triggerToast(`▲ Moved Up ${moveStep}px`);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [moveStep, isSettingsOpen]);
+
+  const handleSimulatedAction = (action: string) => {
+    if (action === 'move_down') {
+      setPosition((p) => ({ ...p, y: p.y + moveStep }));
+      triggerToast(`▼ Entire Ruler Moved Down ${moveStep}px`);
     } else if (action === 'move_up') {
-      setPosition((p) => ({ ...p, y: Math.max(10, p.y - lineSpacing) }));
-      triggerToast(`Moved up 1 line (-${lineSpacing}px)`);
+      setPosition((p) => ({ ...p, y: Math.max(10, p.y - moveStep) }));
+      triggerToast(`▲ Entire Ruler Moved Up ${moveStep}px`);
+    } else if (action === 'toggle_visibility') {
+      setIsVisible(!isVisible);
+      triggerToast(isVisible ? 'Ruler Hidden' : 'Ruler Restored');
     } else if (action === 'move_left') {
       setPosition((p) => ({ ...p, x: Math.max(10, p.x - 25) }));
       triggerToast('Moved left 25px');
@@ -339,36 +299,10 @@ export default function App() {
     } else if (action === 'decrease_thickness') {
       setRulerHeight((h) => Math.max(45, h - 10));
       triggerToast(`Thickness: ${rulerHeight - 10}px`);
-    } else if (action === 'more_transparent') {
-      setOpacity((o) => Math.max(0.2, +(o - 0.1).toFixed(2)));
-      triggerToast(`Opacity: ${Math.round(Math.max(0.2, opacity - 0.1) * 100)}%`);
-    } else if (action === 'more_opaque') {
-      setOpacity((o) => Math.min(1.0, +(o + 0.1).toFixed(2)));
-      triggerToast(`Opacity: ${Math.round(Math.min(1.0, opacity + 0.1) * 100)}%`);
     } else if (action === 'toggle_click_through') {
       setIsClickThrough(!isClickThrough);
-      triggerToast(
-        !isClickThrough
-          ? 'Click-Through ON (Clicks pass through)'
-          : 'Click-Through OFF'
-      );
+      triggerToast(!isClickThrough ? 'Click-Through ON' : 'Click-Through OFF');
     }
-  };
-
-  const handleSimulateKeyRecord = (actionKey: string) => {
-    setRecordingAction(actionKey);
-    setTimeout(() => {
-      const sampleAlternatives: Record<string, string> = {
-        move_down: 'Ctrl + Alt + Down',
-        move_up: 'Ctrl + Alt + Up',
-        toggle_visibility: 'Ctrl + Alt + Shift + R',
-        increase_length: 'Ctrl + Alt + Plus',
-      };
-      const newKey = sampleAlternatives[actionKey] || 'Ctrl + Alt + ' + (shortcutsMap[actionKey]?.split('+').pop()?.trim() || 'K');
-      setShortcutsMap((prev) => ({ ...prev, [actionKey]: newKey }));
-      setRecordingAction(null);
-      triggerToast(`Rebound ${actionKey} to: ${newKey}`);
-    }, 1200);
   };
 
   const handleRestoreDefaults = () => {
@@ -376,24 +310,10 @@ export default function App() {
     setOpacity(0.88);
     setReadingGuide(false);
     setLineSpacing(28);
+    setMoveStep(28);
     setRulerWidth(560);
     setRulerHeight(85);
-    setShortcutsMap({
-      toggle_visibility: 'Win + Shift + R',
-      toggle_always_on_top: 'Win + Shift + T',
-      move_down: 'Win + Shift + Down',
-      move_up: 'Win + Shift + Up',
-      move_left: 'Win + Shift + Left',
-      move_right: 'Win + Shift + Right',
-      increase_length: 'Win + Shift + Plus',
-      decrease_length: 'Win + Shift + Minus',
-      increase_thickness: 'Win + Alt + Up',
-      decrease_thickness: 'Win + Alt + Down',
-      increase_transparency: 'Win + Alt + Left',
-      decrease_transparency: 'Win + Alt + Right',
-      toggle_click_through: 'Win + Shift + C',
-    });
-    triggerToast('All settings and shortcuts restored to defaults');
+    triggerToast('All settings restored to defaults');
   };
 
   return (
@@ -408,10 +328,10 @@ export default function App() {
             <div className="flex items-center gap-2">
               <h1 className="font-bold text-base tracking-tight text-white">Desktop Ruler</h1>
               <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                Tabbed Settings Menu Ready
+                Move Step (Packing List) Fixed
               </span>
             </div>
-            <p className="text-xs text-slate-400">General • Appearance • Global Shortcuts Set with Key Recorder</p>
+            <p className="text-xs text-slate-400">Shift Entire Ruler Up/Down • Scrollable Responsive Settings</p>
           </div>
         </div>
 
@@ -426,7 +346,7 @@ export default function App() {
             }`}
           >
             <Play className="w-3.5 h-3.5" />
-            Live Simulator & Settings
+            Live Simulator & Ruler
           </button>
           <button
             onClick={() => setActiveTab('guide')}
@@ -437,7 +357,7 @@ export default function App() {
             }`}
           >
             <Terminal className="w-3.5 h-3.5" />
-            VS Code Testing Guide
+            VS Code Setup
           </button>
           <button
             onClick={() => setActiveTab('code')}
@@ -448,18 +368,7 @@ export default function App() {
             }`}
           >
             <FileCode className="w-3.5 h-3.5" />
-            Files ({Object.keys(CODE_FILES).length})
-          </button>
-          <button
-            onClick={() => setActiveTab('roadmap')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all ${
-              activeTab === 'roadmap'
-                ? 'bg-amber-500 text-slate-950 font-semibold shadow-sm'
-                : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            16-Step Plan
+            Project Files ({Object.keys(CODE_FILES).length})
           </button>
         </div>
       </header>
@@ -469,36 +378,50 @@ export default function App() {
         {/* TAB 1: LIVE SIMULATOR */}
         {activeTab === 'simulator' && (
           <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
-            {/* Interactive Canvas with Document Background */}
+            {/* Interactive Canvas with Sample Packing List Backdrop */}
             <div className="flex-1 relative bg-slate-900 overflow-hidden flex flex-col select-none">
-              <div className="absolute inset-0 p-8 overflow-hidden pointer-events-none opacity-40">
-                <div className="max-w-2xl mx-auto space-y-4 font-serif text-slate-300">
-                  <div className="h-6 w-3/4 bg-slate-700/40 rounded"></div>
-                  <div className="h-4 w-full bg-slate-700/30 rounded"></div>
-                  <div className="h-4 w-5/6 bg-slate-700/30 rounded"></div>
-                  <div className="h-4 w-11/12 bg-slate-700/30 rounded"></div>
-                  <div className="h-4 w-4/5 bg-slate-700/30 rounded"></div>
-                  <div className="h-24 w-full bg-slate-800/40 rounded-lg border border-slate-700/30 p-4">
-                    <div className="h-3 w-1/3 bg-slate-600/30 rounded mb-2"></div>
-                    <div className="h-3 w-2/3 bg-slate-600/20 rounded mb-2"></div>
-                    <div className="h-3 w-1/2 bg-slate-600/20 rounded"></div>
+              <div className="absolute inset-0 p-8 overflow-hidden pointer-events-none opacity-50">
+                <div className="max-w-2xl mx-auto space-y-3 font-mono text-xs text-slate-300">
+                  <div className="font-bold text-amber-400 text-sm mb-3">SAMPLE WAREHOUSE PACKING LIST</div>
+                  <div className="p-2 border border-slate-700/60 rounded bg-slate-950/60 flex justify-between">
+                    <span>[ ] Item #01: Industrial Hex Screws 10mm (x500)</span>
+                    <span className="text-emerald-400">Bin A-14</span>
                   </div>
-                  <div className="h-4 w-full bg-slate-700/30 rounded"></div>
+                  <div className="p-2 border border-slate-700/60 rounded bg-slate-950/60 flex justify-between">
+                    <span>[ ] Item #02: Rubber Sealing O-Rings 24mm (x120)</span>
+                    <span className="text-emerald-400">Bin B-03</span>
+                  </div>
+                  <div className="p-2 border border-slate-700/60 rounded bg-slate-950/60 flex justify-between">
+                    <span>[ ] Item #03: Thermal Paste Compound 50g (x25)</span>
+                    <span className="text-emerald-400">Bin C-09</span>
+                  </div>
+                  <div className="p-2 border border-slate-700/60 rounded bg-slate-950/60 flex justify-between">
+                    <span>[ ] Item #04: Aluminum Mounting Brackets (x40)</span>
+                    <span className="text-emerald-400">Bin D-12</span>
+                  </div>
+                  <div className="p-2 border border-slate-700/60 rounded bg-slate-950/60 flex justify-between">
+                    <span>[ ] Item #05: Nylon Cable Zip Ties 200mm (x1000)</span>
+                    <span className="text-emerald-400">Bin E-02</span>
+                  </div>
+                  <div className="p-2 border border-slate-700/60 rounded bg-slate-950/60 flex justify-between">
+                    <span>[ ] Item #06: Reinforced Shipping Tape 50mm (x12)</span>
+                    <span className="text-emerald-400">Bin F-07</span>
+                  </div>
                 </div>
               </div>
 
               {/* Status Header Bar */}
               <div className="absolute top-4 left-6 z-10 flex items-center gap-3 bg-slate-950/80 backdrop-blur border border-slate-800 px-3.5 py-1.5 rounded-full text-xs text-slate-300">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>Desktop Ruler Ready</span>
+                <span>Move Step: <strong className="text-amber-400">{moveStep}px per line</strong></span>
                 <span className="text-slate-600">•</span>
-                <span className="font-mono text-amber-400">{rulerWidth}px ({totalCm} cm)</span>
+                <span>Press <strong>Down / Up</strong> keys to shift ruler line by line</span>
                 <button
                   onClick={() => setIsSettingsOpen(true)}
                   className="ml-2 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 font-bold hover:bg-amber-400 transition-colors"
                 >
                   <Settings2 className="w-3 h-3" />
-                  Open Settings Window
+                  Settings Window
                 </button>
               </div>
 
@@ -514,9 +437,9 @@ export default function App() {
                     pointerEvents: isClickThrough ? 'none' : 'auto',
                   }}
                   onMouseDown={startDrag}
-                  className={`absolute top-0 left-0 rounded-lg shadow-2xl border border-slate-900/30 cursor-move transition-shadow ${
+                  className={`absolute top-0 left-0 rounded-lg shadow-2xl border border-slate-900/30 cursor-move transition-transform ${
                     isDragging ? 'shadow-amber-500/20 ring-2 ring-amber-400/50' : ''
-                  } ${isClickThrough ? 'opacity-50 ring-2 ring-rose-500/50' : ''}`}
+                  }`}
                 >
                   {/* Reading Guide */}
                   {readingGuide && (
@@ -526,7 +449,7 @@ export default function App() {
                         style={{ height: `${lineSpacing}px` }}
                         className="w-full bg-transparent flex items-center justify-between px-3 text-[10px] text-rose-300 font-mono tracking-wider"
                       >
-                        <span>▶ READING LINE</span>
+                        <span>▶ PACKING LINE FOCUS</span>
                         <span>{lineSpacing}px</span>
                       </div>
                       <div
@@ -579,14 +502,7 @@ export default function App() {
                   {/* Toast Notification */}
                   {toastMessage && (
                     <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-                      <div
-                        className={`px-3 py-1 rounded-full text-[11px] font-bold shadow-lg flex items-center gap-1.5 ${
-                          toastIsError
-                            ? 'bg-rose-600 text-white border border-rose-400'
-                            : 'bg-slate-900/90 text-white border border-slate-700'
-                        }`}
-                      >
-                        {toastIsError && <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />}
+                      <div className="px-3 py-1 rounded-full text-[11px] font-bold shadow-lg flex items-center gap-1.5 bg-slate-900/90 text-white border border-slate-700">
                         <span>{toastMessage}</span>
                       </div>
                     </div>
@@ -607,28 +523,17 @@ export default function App() {
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="m-auto text-center p-6 bg-slate-950/80 border border-slate-800 rounded-xl max-w-sm">
-                  <Eye className="w-8 h-8 text-amber-400 mx-auto mb-2 opacity-60" />
-                  <p className="text-sm font-semibold text-white">Ruler is currently Hidden</p>
-                  <button
-                    onClick={() => handleSimulatedAction('toggle_visibility', 'Win+Shift+R')}
-                    className="mt-3 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs transition-colors"
-                  >
-                    Press {shortcutsMap.toggle_visibility}
-                  </button>
-                </div>
-              )}
+              ) : null}
 
-              {/* SIMULATED SETTINGS DIALOG (MODAL) */}
+              {/* SIMULATED SETTINGS DIALOG (SCROLLABLE & NEVER CHOPPED OFF) */}
               {isSettingsOpen && (
-                <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                  <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[85vh]">
-                    {/* Dialog Top Bar */}
-                    <div className="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
+                <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-3">
+                  <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-lg h-[440px] flex flex-col overflow-hidden">
+                    {/* Top Bar */}
+                    <div className="px-4 py-3 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between shrink-0">
                       <div className="flex items-center gap-2">
                         <Settings2 className="w-4 h-4 text-amber-400" />
-                        <h2 className="font-bold text-sm text-white">Desktop Ruler Settings</h2>
+                        <h2 className="font-bold text-xs text-white">Desktop Ruler Settings</h2>
                       </div>
                       <button
                         onClick={() => setIsSettingsOpen(false)}
@@ -638,11 +543,11 @@ export default function App() {
                       </button>
                     </div>
 
-                    {/* Tab Bar: General | Appearance | Shortcuts */}
-                    <div className="flex border-b border-slate-800 bg-slate-950/40 px-4 pt-2 gap-2">
+                    {/* Tab Bar */}
+                    <div className="flex border-b border-slate-800 bg-slate-950/40 px-3 pt-1.5 gap-2 shrink-0">
                       <button
                         onClick={() => setSettingsActiveTab('general')}
-                        className={`px-4 py-2 rounded-t-lg text-xs font-semibold transition-all border-t border-x ${
+                        className={`px-3 py-1.5 rounded-t-lg text-xs font-semibold border-t border-x ${
                           settingsActiveTab === 'general'
                             ? 'bg-slate-900 text-amber-400 border-slate-700 border-b-transparent -mb-px'
                             : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -652,7 +557,7 @@ export default function App() {
                       </button>
                       <button
                         onClick={() => setSettingsActiveTab('appearance')}
-                        className={`px-4 py-2 rounded-t-lg text-xs font-semibold transition-all border-t border-x ${
+                        className={`px-3 py-1.5 rounded-t-lg text-xs font-semibold border-t border-x ${
                           settingsActiveTab === 'appearance'
                             ? 'bg-slate-900 text-amber-400 border-slate-700 border-b-transparent -mb-px'
                             : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -662,109 +567,108 @@ export default function App() {
                       </button>
                       <button
                         onClick={() => setSettingsActiveTab('shortcuts')}
-                        className={`px-4 py-2 rounded-t-lg text-xs font-semibold transition-all border-t border-x flex items-center gap-1.5 ${
+                        className={`px-3 py-1.5 rounded-t-lg text-xs font-semibold border-t border-x flex items-center gap-1.5 ${
                           settingsActiveTab === 'shortcuts'
                             ? 'bg-slate-900 text-amber-400 border-slate-700 border-b-transparent -mb-px'
                             : 'border-transparent text-slate-400 hover:text-slate-200'
                         }`}
                       >
-                        <span>Shortcuts (Global)</span>
+                        <span>Shortcuts</span>
                         <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[10px]">13</span>
                       </button>
                     </div>
 
-                    {/* Dialog Tab Body */}
-                    <div className="flex-1 overflow-y-auto p-5">
-                      {/* TAB 1: GENERAL */}
+                    {/* Scrollable Tab Body */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
                       {settingsActiveTab === 'general' && (
-                        <div className="space-y-5">
-                          <div>
-                            <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">
-                              Window Behavior
-                            </h3>
-                            <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-950/60 border border-slate-800 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={isAlwaysOnTop}
-                                onChange={(e) => {
-                                  setIsAlwaysOnTop(e.target.checked);
-                                  triggerToast(`Always on Top: ${e.target.checked ? 'Enabled' : 'Disabled'}`);
-                                }}
-                                className="accent-amber-500 w-4 h-4 rounded"
-                              />
-                              <div>
-                                <div className="text-xs font-medium text-white">Keep Ruler Always on Top</div>
-                                <div className="text-[11px] text-slate-400">Ruler stays visible above browsers, Word, and documents.</div>
-                              </div>
-                            </label>
-                          </div>
-
-                          <div>
-                            <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">
-                              Reading Guide Mode
-                            </h3>
-                            <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 space-y-3">
-                              <label className="flex items-center gap-3 cursor-pointer">
+                        <div className="space-y-4">
+                          {/* Packing List Step */}
+                          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 space-y-2">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+                              <ListOrdered className="w-4 h-4" />
+                              Vertical Move Step (Packing List & Document Line Height)
+                            </div>
+                            <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                              Controls how many pixels the entire ruler shifts up or down when pressing Down/Up keys or global shortcuts:
+                            </p>
+                            <div className="flex items-center justify-between pt-1">
+                              <span className="text-xs text-slate-200">Pixels per step:</span>
+                              <div className="flex items-center gap-2">
                                 <input
-                                  type="checkbox"
-                                  checked={readingGuide}
-                                  onChange={(e) => setReadingGuide(e.target.checked)}
-                                  className="accent-amber-500 w-4 h-4 rounded"
+                                  type="range"
+                                  min="10"
+                                  max="100"
+                                  value={moveStep}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value, 10);
+                                    setMoveStep(val);
+                                    triggerToast(`Move Step set to ${val}px`);
+                                  }}
+                                  className="accent-amber-500 w-28 cursor-pointer"
                                 />
-                                <span className="text-xs font-medium text-white">Enable Reading Guide (dims outer text)</span>
-                              </label>
-
-                              <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
-                                <span className="text-xs text-slate-300">Reading Line Height (Spacing):</span>
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="range"
-                                    min="18"
-                                    max="60"
-                                    value={lineSpacing}
-                                    onChange={(e) => setLineSpacing(parseInt(e.target.value, 10))}
-                                    className="accent-amber-500 w-24"
-                                  />
-                                  <span className="font-mono text-xs text-amber-400 w-12 text-right">{lineSpacing} px</span>
-                                </div>
+                                <span className="font-mono text-xs font-bold text-amber-400 w-16 text-right">
+                                  {moveStep} px
+                                </span>
                               </div>
                             </div>
                           </div>
 
+                          {/* Always On Top */}
                           <div>
-                            <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">
-                              Window Bounds
-                            </h3>
-                            <button
-                              onClick={() => {
-                                setRulerWidth(560);
-                                setRulerHeight(85);
-                                triggerToast('Ruler reset to default 560×85 px');
-                              }}
-                              className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition-colors"
-                            >
-                              Reset to Default Dimensions (560×85 px)
-                            </button>
+                            <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-950/60 border border-slate-800 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isAlwaysOnTop}
+                                onChange={(e) => setIsAlwaysOnTop(e.target.checked)}
+                                className="accent-amber-500 w-4 h-4 rounded"
+                              />
+                              <div>
+                                <div className="text-xs font-medium text-white">Keep Ruler Always on Top</div>
+                                <div className="text-[11px] text-slate-400">Stays above Excel, PDF viewers, and browser pages.</div>
+                              </div>
+                            </label>
                           </div>
+
+                          {/* Reading Guide */}
+                          <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 space-y-2">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={readingGuide}
+                                onChange={(e) => setReadingGuide(e.target.checked)}
+                                className="accent-amber-500 w-4 h-4 rounded"
+                              />
+                              <span className="text-xs font-medium text-white">Enable Reading Guide (dim outer lines)</span>
+                            </label>
+                          </div>
+
+                          {/* Reset */}
+                          <button
+                            onClick={() => {
+                              setRulerWidth(560);
+                              setRulerHeight(85);
+                              triggerToast('Ruler reset to default 560×85 px');
+                            }}
+                            className="w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition-colors"
+                          >
+                            Reset Ruler Dimensions (560×85 px)
+                          </button>
                         </div>
                       )}
 
-                      {/* TAB 2: APPEARANCE */}
                       {settingsActiveTab === 'appearance' && (
-                        <div className="space-y-5">
+                        <div className="space-y-4">
                           <div>
-                            <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">
-                              Preset Colors
-                            </h3>
+                            <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block mb-2">Preset Colors</span>
                             <div className="grid grid-cols-3 gap-2">
                               {COLOR_PRESETS.map((p) => (
                                 <button
                                   key={p.name}
                                   onClick={() => setRulerColor(p.hex)}
                                   style={{ backgroundColor: p.hex }}
-                                  className={`h-9 rounded-md text-xs font-bold transition-all ${
+                                  className={`h-8 rounded-md text-xs font-bold ${
                                     p.textDark ? 'text-slate-900' : 'text-white'
-                                  } ${rulerColor === p.hex ? 'ring-2 ring-white shadow-md scale-[1.02]' : 'opacity-85'}`}
+                                  } ${rulerColor === p.hex ? 'ring-2 ring-white shadow-md' : 'opacity-85'}`}
                                 >
                                   {p.name.split(' ')[0]}
                                 </button>
@@ -774,7 +678,7 @@ export default function App() {
 
                           <div>
                             <div className="flex justify-between text-xs text-slate-300 mb-1.5">
-                              <span className="font-bold text-amber-400 uppercase tracking-wider">Transparency (Opacity)</span>
+                              <span className="font-bold text-amber-400">Transparency</span>
                               <span className="font-mono text-amber-400">{Math.round(opacity * 100)}%</span>
                             </div>
                             <input
@@ -787,67 +691,36 @@ export default function App() {
                               className="w-full accent-amber-500 cursor-pointer"
                             />
                           </div>
-
-                          <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 flex items-start gap-2.5">
-                            <CreditCard className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                            <div className="text-xs text-slate-300">
-                              <strong className="text-white">Physical DPI Calibration:</strong> Hardware monitors query EDID data. Verify on screen with an <strong>85.6 mm</strong> credit card!
-                            </div>
-                          </div>
                         </div>
                       )}
 
-                      {/* TAB 3: SHORTCUTS (GLOBAL SETTINGS) */}
                       {settingsActiveTab === 'shortcuts' && (
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between text-xs text-slate-400 pb-1">
-                            <span>All shortcuts work globally while other applications are focused.</span>
-                            <span className="text-[11px] text-amber-400 font-mono">Win32 API</span>
-                          </div>
-
-                          <div className="space-y-2">
-                            {[
-                              { id: 'toggle_visibility', label: 'Show / Hide Ruler' },
-                              { id: 'toggle_always_on_top', label: 'Toggle Always-on-Top' },
-                              { id: 'move_down', label: 'Move Down 1 Line' },
-                              { id: 'move_up', label: 'Move Up 1 Line' },
-                              { id: 'move_left', label: 'Move Left 25px' },
-                              { id: 'move_right', label: 'Move Right 25px' },
-                              { id: 'increase_length', label: 'Increase Length (+30px)' },
-                              { id: 'decrease_length', label: 'Decrease Length (-30px)' },
-                              { id: 'increase_thickness', label: 'Increase Thickness (+10px)' },
-                              { id: 'decrease_thickness', label: 'Decrease Thickness (-10px)' },
-                              { id: 'increase_transparency', label: 'More Transparent' },
-                              { id: 'decrease_transparency', label: 'More Opaque' },
-                              { id: 'toggle_click_through', label: 'Toggle Click-Through Mode' },
-                            ].map((s) => (
-                              <div
-                                key={s.id}
-                                className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs"
-                              >
-                                <span className="font-medium text-slate-200">{s.label}</span>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => handleSimulateKeyRecord(s.id)}
-                                    className={`px-2.5 py-1 rounded font-mono text-[11px] font-semibold border transition-all ${
-                                      recordingAction === s.id
-                                        ? 'bg-amber-500 text-slate-950 border-amber-400 animate-pulse'
-                                        : 'bg-slate-900 text-amber-300 border-slate-700 hover:border-amber-500'
-                                    }`}
-                                    title="Click to rebind with new keys"
-                                  >
-                                    {recordingAction === s.id ? 'Press keys...' : shortcutsMap[s.id]}
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                        <div className="space-y-2">
+                          {[
+                            { id: 'move_down', label: 'Move Entire Ruler Down 1 Line' },
+                            { id: 'move_up', label: 'Move Entire Ruler Up 1 Line' },
+                            { id: 'toggle_visibility', label: 'Show / Hide Ruler' },
+                            { id: 'toggle_always_on_top', label: 'Toggle Always on Top' },
+                            { id: 'increase_length', label: 'Increase Length (+30px)' },
+                            { id: 'decrease_length', label: 'Decrease Length (-30px)' },
+                            { id: 'toggle_click_through', label: 'Toggle Click-Through Mode' },
+                          ].map((s) => (
+                            <div
+                              key={s.id}
+                              className="p-2 rounded-lg bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs"
+                            >
+                              <span className="font-medium text-slate-200">{s.label}</span>
+                              <kbd className="px-2 py-0.5 rounded bg-slate-900 text-amber-300 border border-slate-700 font-mono text-[11px]">
+                                {shortcutsMap[s.id]}
+                              </kbd>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
 
-                    {/* Dialog Bottom Bar */}
-                    <div className="px-5 py-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between">
+                    {/* Pinned Bottom Bar: Always 100% visible */}
+                    <div className="px-4 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between shrink-0">
                       <button
                         onClick={handleRestoreDefaults}
                         className="text-xs text-rose-400 hover:text-rose-300 font-medium transition-colors"
@@ -866,100 +739,83 @@ export default function App() {
               )}
             </div>
 
-            {/* Right: Quick Controls & Settings launcher */}
+            {/* Right: Quick Controls */}
             <div className="w-full md:w-80 border-l border-slate-800 bg-slate-900/60 p-5 overflow-y-auto space-y-6">
               <div>
                 <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <Settings2 className="w-3.5 h-3.5 text-amber-400" />
-                  Settings Menu Launcher
+                  <ListOrdered className="w-3.5 h-3.5 text-amber-400" />
+                  Packing List Shift Controls
                 </h3>
-                <button
-                  onClick={() => {
-                    setIsSettingsOpen(true);
-                    setSettingsActiveTab('shortcuts');
-                  }}
-                  className="w-full py-2.5 px-3.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/10 transition-all"
-                >
-                  <Sliders className="w-3.5 h-3.5" />
-                  Open Global Settings Window
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => handleSimulatedAction('move_down')}
+                    className="w-full py-2.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/10 transition-all"
+                  >
+                    <ArrowDown className="w-4 h-4" />
+                    Move Ruler Down 1 Line (+{moveStep}px)
+                  </button>
+                  <button
+                    onClick={() => handleSimulatedAction('move_up')}
+                    className="w-full py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center justify-center gap-2 border border-slate-700 transition-all"
+                  >
+                    <ArrowUp className="w-4 h-4" />
+                    Move Ruler Up 1 Line (-{moveStep}px)
+                  </button>
+                </div>
                 <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
-                  In your desktop app, right-click the ruler and choose <strong>⚙ Settings...</strong> to launch the dedicated window!
+                  In the desktop app, simply press the <strong>Down</strong> or <strong>Up</strong> arrow keys or <kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">Ctrl+Alt+Down</kbd> while working in another app to move down line by line!
                 </p>
               </div>
 
-              {/* Quick Preset Action */}
-              <div className="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800 space-y-2">
-                <span className="text-xs font-bold text-white">How to toggle settings:</span>
-                <ul className="text-xs text-slate-400 space-y-1.5 list-disc pl-4">
-                  <li>Click <strong>General</strong>, <strong>Appearance</strong>, or <strong>Shortcuts</strong> tabs.</li>
-                  <li>Click <strong>[ Record Key ]</strong> to assign any new hotkey.</li>
-                  <li>Press <strong>Esc</strong> or click <strong>Close</strong> to return to your ruler.</li>
-                </ul>
+              <div>
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                  <Settings2 className="w-3.5 h-3.5 text-amber-400" />
+                  Settings Menu
+                </h3>
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="w-full py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 flex items-center justify-center gap-2 transition-colors"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                  Open Full Settings Dialog
+                </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* TAB 2: VS CODE STEP GUIDE */}
+        {/* TAB 2: VS CODE SETUP */}
         {activeTab === 'guide' && (
-          <div className="flex-1 overflow-y-auto p-8 max-w-4xl mx-auto space-y-8">
+          <div className="flex-1 overflow-y-auto p-8 max-w-4xl mx-auto space-y-6">
             <div>
               <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold uppercase tracking-wider mb-2">
                 <Terminal className="w-4 h-4" />
-                Settings Menu Integration in VS Code
+                Updated Fixes for Visual Studio Code
               </div>
               <h2 className="text-2xl font-bold text-white tracking-tight">
-                Tabbed Settings Menu & Shortcut Customizer
+                Packing List Line Movement & Viewport Fix
               </h2>
-              <p className="text-sm text-slate-400 mt-1">
-                You now have a dedicated settings interface with General, Appearance, and Shortcuts tabs!
-              </p>
             </div>
 
-            <div className="space-y-6">
-              <div className="p-5 rounded-xl bg-slate-900/70 border border-slate-800 space-y-3">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 text-xs font-bold flex items-center justify-center">
-                    1
-                  </span>
-                  <h3 className="font-semibold text-white text-sm">
-                    How to Open the Settings Window
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-400 pl-9">
-                  Right-click anywhere on the floating ruler and select <strong>⚙ Settings (Preferences & Hotkeys)...</strong> at the top of the menu, or press the <kbd className="font-mono px-1.5 py-0.5 rounded bg-slate-800 text-amber-400 border border-slate-700">S</kbd> key when the ruler is focused.
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                <h3 className="font-semibold text-amber-400 text-sm">1. Line Movement (Packing List Navigation)</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  When you press the <strong>Down</strong> arrow or <strong>Ctrl + Alt + Down</strong> (global), the entire ruler moves down by your configured line step (default 28px). It will no longer increase the ruler's thickness!
                 </p>
               </div>
 
-              <div className="p-5 rounded-xl bg-slate-900/70 border border-slate-800 space-y-3">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 text-xs font-bold flex items-center justify-center">
-                    2
-                  </span>
-                  <h3 className="font-semibold text-white text-sm">
-                    How to Toggle Between Settings Categories
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-400 pl-9 leading-relaxed">
-                  Click the tabs across the top:
-                  <br />• <strong>General</strong>: Toggle Always-on-Top, configure Reading Guide line spacing, and reset window size.
-                  <br />• <strong>Appearance</strong>: Change color schemes, drag the live transparency slider, and view physical DPI calibration.
-                  <br />• <strong>Shortcuts</strong>: View and customize all 13 global background shortcuts.
+              <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                <h3 className="font-semibold text-amber-400 text-sm">2. Configurable Move Step</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Open <strong>Settings → General</strong> and adjust <strong>Vertical Move Step</strong> to match the exact line height of your packing lists, spreadsheets, or documents.
                 </p>
               </div>
 
-              <div className="p-5 rounded-xl bg-slate-900/70 border border-slate-800 space-y-3">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 text-xs font-bold flex items-center justify-center">
-                    3
-                  </span>
-                  <h3 className="font-semibold text-white text-sm">
-                    How to Rebind a Shortcut
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-400 pl-9 leading-relaxed">
-                  Go to the <strong>Shortcuts</strong> tab, click the button next to any action (e.g. <code>Move Down 1 Line</code>), and simply press your desired keyboard combination. It will automatically detect modifiers and save the new shortcut!
+              <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                <h3 className="font-semibold text-amber-400 text-sm">3. Settings Viewport No Longer Chopped Off</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  All tabs now have smooth internal scrollbars. The dialog is resizable and the bottom buttons (Restore Defaults and Close) are pinned and always visible.
                 </p>
               </div>
             </div>
@@ -992,20 +848,6 @@ export default function App() {
                   </button>
                 ))}
               </div>
-
-              <div className="pt-4 border-t border-slate-800">
-                <button
-                  onClick={() => {
-                    Object.entries(CODE_FILES).forEach(([name, f]) => {
-                      handleDownload(name, f.content);
-                    });
-                  }}
-                  className="w-full py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 flex items-center justify-center gap-2 transition-colors border border-slate-700"
-                >
-                  <Download className="w-3.5 h-3.5 text-amber-400" />
-                  Download All Files
-                </button>
-              </div>
             </div>
 
             <div className="flex-1 flex flex-col bg-slate-950 overflow-hidden">
@@ -1031,90 +873,11 @@ export default function App() {
                       </>
                     )}
                   </button>
-                  <button
-                    onClick={() => handleDownload(selectedFile, CODE_FILES[selectedFile].content)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Save</span>
-                  </button>
                 </div>
               </div>
-
               <div className="flex-1 overflow-auto p-6 font-mono text-xs leading-relaxed text-slate-300">
                 <pre className="whitespace-pre">{CODE_FILES[selectedFile].content}</pre>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: 16-STEP ROADMAP */}
-        {activeTab === 'roadmap' && (
-          <div className="flex-1 overflow-y-auto p-8 max-w-4xl mx-auto space-y-6">
-            <div>
-              <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold uppercase tracking-wider mb-1">
-                <BookOpen className="w-4 h-4" />
-                Build Roadmap
-              </div>
-              <h2 className="text-2xl font-bold text-white tracking-tight">16-Step Development Plan</h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Tabbed Settings Menu with dynamic Key Recorder is built!
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {[
-                { num: 1, title: 'Project folder & dependencies', status: 'ready', desc: 'Create folder, virtualenv, and install PySide6 & pynput.' },
-                { num: 2, title: 'Frameless floating window', status: 'ready', desc: 'WindowStaysOnTopHint and translucent background.' },
-                { num: 3, title: 'Centimetre & millimetre ticks', status: 'ready', desc: 'Sub-pixel QPainter tick marks and numeric labels.' },
-                { num: 4, title: 'Mouse drag & resize handle', status: 'ready', desc: 'Drag anywhere to move, right-edge grab handle to resize.' },
-                { num: 5, title: 'Keyboard arrow adjustments', status: 'ready', desc: 'Arrow keys for fine-grained width and thickness tweaking.' },
-                { num: 6, title: 'Global shortcuts & conflict handling', status: 'ready', desc: 'Win+Shift+R and Win+Shift+T registered with Win32 API.' },
-                { num: 7, title: 'Always-on-top toggle', status: 'ready', desc: 'Context menu and Win+Shift+T toggle.' },
-                { num: 8, title: 'Show / hide shortcut', status: 'ready', desc: 'Win+Shift+R instant show/hide without terminating process.' },
-                { num: 9, title: 'Global 1-line up/down movement', status: 'ready', desc: 'Win+Shift+Up/Down jumps ruler by configurable line spacing.' },
-                { num: 10, title: 'Reading guide mode', status: 'ready', desc: 'Highlight active line and dim upper/lower document bands.' },
-                { num: 11, title: 'Colour & transparency controls', status: 'ready', desc: 'Amber, Cyan, Emerald, Dark presets and Win+Alt+Left/Right.' },
-                { num: 12, title: 'Persistent settings.json', status: 'ready', desc: 'Restore position, dimensions, colors on reboot.' },
-                { num: 13, title: 'Click-through mode (WS_EX_TRANSPARENT)', status: 'ready', desc: 'Win+Shift+C allows mouse clicks to pass directly through.' },
-                { num: 14, title: 'Settings Menu & Key Customizer', status: 'ready', desc: 'Tabbed dialog: General, Appearance, and Shortcuts with Key Recorder.' },
-                { num: 15, title: 'Cross-app testing & stability check', status: 'next', desc: 'Test over Chrome, Word, PDF viewers, and IDEs.' },
-                { num: 16, title: 'PyInstaller Windows package', status: 'next', desc: 'Bundle into standalone .exe installer.' },
-              ].map((step) => (
-                <div
-                  key={step.num}
-                  className={`p-4 rounded-xl border transition-all ${
-                    step.status === 'ready'
-                      ? 'bg-slate-900/90 border-amber-500/40 shadow-sm'
-                      : 'bg-slate-900/40 border-slate-800/80 opacity-75'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center ${
-                          step.status === 'ready'
-                            ? 'bg-amber-500 text-slate-950'
-                            : 'bg-slate-800 text-slate-400 border border-slate-700'
-                        }`}
-                      >
-                        {step.num}
-                      </span>
-                      <span className="font-semibold text-sm text-white">{step.title}</span>
-                    </span>
-                    <span
-                      className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                        step.status === 'ready'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          : 'bg-slate-800 text-slate-400 border border-slate-700'
-                      }`}
-                    >
-                      {step.status === 'ready' ? 'Complete' : 'Upcoming'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400 pl-8 leading-relaxed">{step.desc}</p>
-                </div>
-              ))}
             </div>
           </div>
         )}
