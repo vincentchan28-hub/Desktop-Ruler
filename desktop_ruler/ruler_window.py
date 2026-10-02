@@ -9,7 +9,7 @@ and integration with the dedicated tabbed Settings Dialog.
 import sys
 import os
 from typing import Optional
-from PySide6.QtCore import Qt, QPoint, QRect, QSize, QTimer
+from PySide6.QtCore import Qt, QPoint, QRect, QSize, QTimer, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import (
     QPainter,
     QColor,
@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 from desktop_ruler.settings import SettingsManager
 from desktop_ruler.settings_dialog import SettingsDialog
 from desktop_ruler.calculator_widget import CalculatorWindow
+from desktop_ruler.dock_tab import DockTab
 
 
 class DesktopRuler(QWidget):
@@ -49,6 +50,11 @@ class DesktopRuler(QWidget):
         self.hotkey_manager = None
         self._settings_dialog: Optional[SettingsDialog] = None
         self._calc_window = None
+        self._dock_tab: Optional[DockTab] = None
+        self._prompt_done = False
+        self._move_anim = None
+        self._fade_anim = None
+        self._drag_out_offset = None
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -283,6 +289,9 @@ class DesktopRuler(QWidget):
 
     def show_persistent_text_prompt(self) -> None:
         """Show dialog on startup if persistent text exists."""
+        if self._prompt_done:
+            return
+        self._prompt_done = True
         saved_text = self.settings.get("persistent_text", "text", "")
         if not saved_text:
             return
@@ -420,8 +429,155 @@ class DesktopRuler(QWidget):
         elif action == "toggle_click_through":
             self.toggle_click_through()
 
+    def _screen_by_name(self, name: str):
+        for s in QApplication.screens():
+            if s.name() == name:
+                return s
+        return QApplication.primaryScreen()
+
+    def _is_outer_edge(self, screen, edge: str) -> bool:
+        geo = screen.geometry()
+        for other in QApplication.screens():
+            if other.name() == screen.name():
+                continue
+            g = other.geometry()
+            overlap = g.top() < geo.bottom() and g.bottom() > geo.top()
+            if edge == "left" and overlap and abs((g.right() + 1) - geo.left()) <= 1:
+                return False
+            if edge == "right" and overlap and abs(g.left() - (geo.right() + 1)) <= 1:
+                return False
+        return True
+
+    def _check_dock(self, global_pos: QPoint) -> None:
+        screen = QApplication.screenAt(global_pos)
+        if not screen:
+            return
+        geo = screen.geometry()
+        edge = None
+        if global_pos.x() <= geo.left() + 1:
+            edge = "left"
+        elif global_pos.x() >= geo.right() - 1:
+            edge = "right"
+        if edge and self._is_outer_edge(screen, edge):
+            self.dock_to_edge(edge, screen)
+
+    def _show_dock_tab(self, edge: str, y: int, screen, animate: bool = False) -> None:
+        if self._dock_tab is None:
+            self._dock_tab = DockTab()
+            self._dock_tab.clicked.connect(self.undock)
+            self._dock_tab.drag_started.connect(self.begin_drag_out)
+            self._dock_tab.dragged.connect(self.drag_out_move)
+            self._dock_tab.drag_finished.connect(self.end_drag_out)
+        self._dock_tab.set_color(self.ruler_color)
+        if animate:
+            self._dock_tab.slide_in(edge, y, screen.geometry())
+        else:
+            self._dock_tab.place(edge, y, screen.geometry())
+            self._dock_tab.show()
+            self._dock_tab.raise_()
+
+    def dock_to_edge(self, edge: str, screen) -> None:
+        self._dragging = False
+        self._resizing = False
+        geo = screen.geometry()
+        y = self.y() + self.height() // 2
+        self.settings.set("dock", "docked", True)
+        self.settings.set("dock", "edge", edge)
+        self.settings.set("dock", "y", y)
+        self.settings.set("dock", "screen", screen.name())
+
+        end_x = geo.left() - self.width() if edge == "left" else geo.right() + 1
+        self._move_anim = QPropertyAnimation(self, b"pos", self)
+        self._move_anim.setDuration(200)
+        self._move_anim.setStartValue(self.pos())
+        self._move_anim.setEndValue(QPoint(end_x, self.y()))
+        self._move_anim.setEasingCurve(QEasingCurve.Type.InCubic)
+        self._fade_anim = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fade_anim.setDuration(200)
+        self._fade_anim.setStartValue(1.0)
+        self._fade_anim.setEndValue(0.0)
+        self._move_anim.finished.connect(lambda: self._finish_dock(edge, y, screen))
+        self._move_anim.start()
+        self._fade_anim.start()
+
+    def _finish_dock(self, edge: str, y: int, screen) -> None:
+        self.hide()
+        self.setWindowOpacity(1.0)
+        self._show_dock_tab(edge, y, screen, animate=True)
+
+    def undock(self) -> None:
+        edge = self.settings.get("dock", "edge", "left")
+        y = int(self.settings.get("dock", "y", 300))
+        screen = self._screen_by_name(self.settings.get("dock", "screen", ""))
+        geo = screen.geometry()
+        gap = DockTab.TAB_WIDTH + 10
+        if edge == "left":
+            x = geo.left() + gap
+        else:
+            x = geo.right() + 1 - self.width() - gap
+        x = max(geo.left(), x)
+        top = max(geo.top(), min(y - self.height() // 2, geo.bottom() - self.height()))
+        if self._dock_tab:
+            self._dock_tab.hide()
+        self.settings.set("dock", "docked", False)
+
+        start_x = geo.left() - self.width() if edge == "left" else geo.right() + 1
+        self.move(start_x, top)
+        self.setWindowOpacity(0.0)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+        self._move_anim = QPropertyAnimation(self, b"pos", self)
+        self._move_anim.setDuration(220)
+        self._move_anim.setStartValue(QPoint(start_x, top))
+        self._move_anim.setEndValue(QPoint(x, top))
+        self._move_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._fade_anim = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fade_anim.setDuration(220)
+        self._fade_anim.setStartValue(0.0)
+        self._fade_anim.setEndValue(1.0)
+        self._move_anim.start()
+        self._fade_anim.start()
+        self._schedule_save_geometry()
+        
+    def begin_drag_out(self, global_pos: QPoint) -> None:
+        edge = self.settings.get("dock", "edge", "left")
+        screen = self._screen_by_name(self.settings.get("dock", "screen", ""))
+        geo = screen.geometry()
+        x = geo.left() if edge == "left" else geo.right() + 1 - self.width()
+        y = max(geo.top(), min(global_pos.y() - self.height() // 2, geo.bottom() - self.height()))
+        self.move(x, y)
+        self.setWindowOpacity(1.0)
+        self.show()
+        self.raise_()
+        self._drag_out_offset = global_pos - QPoint(x, y)
+        self.settings.set("dock", "docked", False)
+
+    def drag_out_move(self, global_pos: QPoint) -> None:
+        if self._drag_out_offset is not None:
+            self.move(global_pos - self._drag_out_offset)
+
+    def end_drag_out(self) -> None:
+        self._drag_out_offset = None
+        self._save_geometry_now()
+
+    def show_or_restore_dock(self) -> None:
+        """Called at startup: show the ruler, or just the tab if it was docked."""
+        if self.settings.get("dock", "docked", False):
+            screen = self._screen_by_name(self.settings.get("dock", "screen", ""))
+            self._show_dock_tab(
+                self.settings.get("dock", "edge", "left"),
+                int(self.settings.get("dock", "y", 300)),
+                screen,
+            )
+        else:
+            self.show()
+
     def toggle_visibility(self) -> None:
-        if self.isVisible():
+        if self._dock_tab is not None and self._dock_tab.isVisible():
+            self.undock()
+        elif self.isVisible():
             self.hide()
         else:
             self.show()
@@ -693,6 +849,7 @@ class DesktopRuler(QWidget):
         elif self._dragging:
             new_pos = event.globalPosition().toPoint() - self._drag_start_pos
             self.move(new_pos.x(), new_pos.y())
+            self._check_dock(event.globalPosition().toPoint())
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:

@@ -34,7 +34,7 @@ def main():
 
     settings = SettingsManager()
     ruler = DesktopRuler(settings_manager=settings)
-    ruler.show()
+    ruler.show_or_restore_dock()
 
     # Start background hotkeys and attach manager to ruler
     hotkey_mgr = GlobalHotkeyManager()

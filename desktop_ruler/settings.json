@@ -1,7 +1,7 @@
 {
   "window": {
-    "x": 1511,
-    "y": 1025,
+    "x": 578,
+    "y": 675,
     "width": 806,
     "height": 105
   },
@@ -39,6 +39,12 @@
   "persistent_text": {
     "enabled": true,
     "text": ""
+  },
+  "dock": {
+    "docked": false,
+    "edge": "left",
+    "y": 825,
+    "screen": "LG ULTRAWIDE"
   },
   "hotkeys": {
     "toggle_visibility": "Win + Ctrl + Alt + H",

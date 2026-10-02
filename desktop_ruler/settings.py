@@ -46,6 +46,12 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "enabled": True,
         "text": "",
     },
+    "dock": {
+        "docked": False,
+        "edge": "left",
+        "y": 300,
+        "screen": "",
+    },
     "hotkeys": {
         "toggle_visibility": "<win>+<shift>+r",
         "toggle_always_on_top": "<win>+<shift>+t",
